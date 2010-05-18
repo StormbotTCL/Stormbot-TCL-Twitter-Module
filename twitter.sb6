@@ -1265,7 +1265,7 @@ proc twitter:shorten {url type} {
 
 	switch -- $type {
 		0 {set query "http://is.gd/api.php?[http::formatQuery longurl $url]"}
-#		1 {set query "http://moourl.com/create/?[http::formatQuery source $url]"}
+		1 {#set query "http://moourl.com/create/?[http::formatQuery source $url]"}
 		2 {set query "http://api.bit.ly/v3/shorten?[http::formatQuery login [getdata $handle BITLY-USERNAME] apiKey [getdata $handle BITLY-APIKEY] longUrl $url format txt]"}
 		3 {set query "http://cli.gs/api/v1/cligs/create?[http::formatQuery url $url]&title=&key=&appid=StormbotTCL"}
 	}
