@@ -1048,9 +1048,9 @@ proc twitter:senddata { handle mode url text query { extra "" } { dmto "" } } {
 	set newtext ""
 	foreach word [split $text] {
 		if {[regexp {^www\.} $word] && ([string length $word] > [expr {[getdata $handle TWSHORTEN] + 6}])} {
-			append newtext "[twitter:shorten "http://$word" [getdata $handle TWSHORTENER] "
+			append newtext "[twitter:shorten "http://$word" [getdata $handle TWSHORTENER]] "
 		} elseif {[regexp {^http\:} $word] && [string length $word] > [getdata $handle TWSHORTEN]} {
-			append newtext "[twitter:shorten $word [getdata $handle TWSHORTENER] "
+			append newtext "[twitter:shorten $word [getdata $handle TWSHORTENER]] "
 		} else {
 			append newtext "$word "
 		}
