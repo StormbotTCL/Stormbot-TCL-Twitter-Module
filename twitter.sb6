@@ -60,6 +60,10 @@ proc SB:proc_twitter {nick host handle chan arg} {
 				printh $nick "Syntax: $::botnick TWITTER PROFILE SET (-name|-url|-location|-description) (Sets your profile information)"
 				printh $nick "Syntax: $::botnick TWITTER PROFILE VIEW <screen name> (View a users profile)"
 				printh $nick "Syntax: $::botnick TWITTER SEARCH <search query> (Search for a profile)"
+				printh $nick "Syntax: $::botnick TWITTER SHORTEN <number> (Set the length of url's that will be shortened. 12-20 recommended)"
+				printh $nick "Syntax: $::botnick TWITTER SHORTENER <option> (0=is.gd, 1=moourl.com (not available yet), 2=bit.ly, 3=cli.gs)"
+				printh $nick "Syntax: $::botnick TWITTER BITLYUN (Your bit.ly account username)"
+				printh $nick "Syntax: $::botnick TWITTER BITLYAPI (Your bit.ly account API key)"
 			printh $nick ""
 			printh $nick "\002Client commands\002"
 				printh $nick "Syntax: $::botnick TWITTER <message text> (Send a status update to twitter - 140 Char limit)"
@@ -160,6 +164,64 @@ proc SB:proc_twitter {nick host handle chan arg} {
 			sbdset TWITTER:HOME $thome
 			SB:botdatafile write
 			printh $nick "Setting the TWITTER command channel to ${thome}"
+			return 0
+		}
+
+		shrtn - shorten {
+			# URLs/Links have to be greater than this number to be reduced by the shortner setting.
+			set twhome [sbdget TWITTER:HOME]
+			if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
+			if {[stl $chan] != [stl $twhome]} {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
+
+			setdata $handle TWSHORTEN $2
+			save
+			print $nick "URLs/Links will now be shortened if greater than $2 characters."
+			return 0
+		}
+
+		shrtnr - shortener {
+			#Choice of URL/Link shortener
+			# 0=is.gd, 1=moourl.com, 2=bit.ly, 3=cli.gs
+			set twhome [sbdget TWITTER:HOME]
+			if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
+			if {[stl $chan] != [stl $twhome]} {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
+
+			setdata $handle TWSHORTENER $2
+			save
+
+			if {$2 == 0} {print $nick "Your URL/Link shortener has been set to http://is.gd"; return 0}
+			if {$2 == 1} {print $nick "Your URL/Link shortener has been set to http://moourl.com"; return 0}
+			if {$2 == 2} {print $nick "Your URL/Link shortener has been set to http://bit.ly. Please set your bit.ly username and API key."; return 0}
+			if {$2 == 3} {print $nick "Your URL/Link shortener has been set to http://cli.gs"; return 0}
+
+			return 0
+		}
+
+		bun - bitlyun - bitlyusername {
+			# User's bit.ly account username
+			if $dccokay {
+				if [sbd:equal -nocase @LAST_TRIGGER PUB] {printh $nick "You may not use this command in channel, for security purposes. Use either /MSG or .DCC to use this command."; return 0}
+			} else {
+				if [sbd:equal -nocase @LAST_TRIGGER MSG] {printh $nick "You may only use this command in /MSG format for security purposes."; return 0}
+			}
+
+			setdata $handle BITLY-USERNAME $2
+			save
+			print $nick "Your bit.ly username has been saved."
+			return 0
+		}
+
+		bapi - bitlyapi - bitlyapikey {
+			# User's bit.ly account API key
+			if $dccokay {
+				if [sbd:equal -nocase @LAST_TRIGGER PUB] {printh $nick "You may not use this command in channel, for security purposes. Use either /MSG or .DCC to use this command."; return 0}
+			} else {
+				if [sbd:equal -nocase @LAST_TRIGGER MSG] {printh $nick "You may only use this command in /MSG format for security purposes."; return 0}
+			}
+
+			setdata $handle BITLY-APIKEY $2
+			save
+			print $nick "Your bit.ly API Key has been saved."
 			return 0
 		}
 
@@ -981,7 +1043,21 @@ proc twitter:senddata { handle mode url text query { extra "" } { dmto "" } } {
 	} else {
 		set url "http://twitter.com/${url}"
 	}
-#msghome TWITTER:URL($url)
+
+	# Work with URL shorteners
+	set newtext ""
+	foreach word [split $text] {
+		if {[regexp {^www\.} $word] && ([string length $word] > [expr {[getdata $handle TWSHORTEN] + 6}])} {
+			append newtext "[twitter:shorten "http://$word" [getdata $handle TWSHORTENER] "
+		} elseif {[regexp {^http\:} $word] && [string length $word] > [getdata $handle TWSHORTEN]} {
+			append newtext "[twitter:shorten $word [getdata $handle TWSHORTENER] "
+		} else {
+			append newtext "$word "
+		}
+	}
+
+	set text [string trim $newtext]
+
 	# Twitter has a 140 character limit
 	# [ 02:46:33 pm | 240910.24 ]   [ Demon|Away ] trying to post something to my account through the api that just happens to be > 140 characters and it's not hitting my account
 	# [ 02:47:42 pm | 240910.24 ]   [ noradio ] yeah you can no longer post tweets longer than 140 characters
@@ -1015,7 +1091,7 @@ proc twitter:senddata { handle mode url text query { extra "" } { dmto "" } } {
 		set data [http::data $token]
 		set code [http::code $token]
 		::http::cleanup $token
-#msghome TWITTER:DATA($data)
+
 		if ![string eq 400 $ncode] {
 			if [string eq "tweet" $mode] {
 				set tweets [list [json::json2dict $data]]
@@ -1179,4 +1255,23 @@ proc twitter:converttime date {
 	}
 
 	return $timestamp; # Adjusted so it'll print the time relative to YOUR timezone
+}
+
+proc twitter:shorten {url type} {
+	# 0=is.gd, 1=moourl.com, 2=bit.ly, 3=cli.gs
+	# moourl.com is unavalable until they release an api
+	set agent "User Agent: Mozilla/5.0 (Windows; U; Windows NT 6.0; en-US; rv:1.9.2.3) Gecko/20100401 Firefox/3.6.3 GTB7.0 ( .NET CLR 3.5.30729)"
+	set www [::http::config -useragent $agent -urlencoding "utf-8"]
+
+	switch -- $type {
+		0 {set query "http://is.gd/api.php?[http::formatQuery longurl $url]"}
+#		1 {set query "http://moourl.com/create/?[http::formatQuery source $url]"}
+		2 {set query "http://api.bit.ly/v3/shorten?[http::formatQuery login [getdata $handle BITLY-USERNAME] apiKey [getdata $handle BITLY-APIKEY] longUrl $url format txt]"}
+		3 {set query "http://cli.gs/api/v1/cligs/create?[http::formatQuery url $url]&title=&key=&appid=StormbotTCL"}
+	}
+
+	set token [http::geturl $query -timeout 10000]
+	upvar #0 $token state
+	if {![string match "* *" $state(body)]} { return [string map {"\n" ""} $state(body)] }
+	return $url
 }
