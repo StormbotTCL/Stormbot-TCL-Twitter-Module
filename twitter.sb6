@@ -202,7 +202,7 @@ proc SB:proc_twitter {nick host handle chan arg} {
 			if $dccokay {
 				if [sbd:equal -nocase @LAST_TRIGGER PUB] {printh $nick "You may not use this command in channel, for security purposes. Use either /MSG or .DCC to use this command."; return 0}
 			} else {
-				if [sbd:equal -nocase @LAST_TRIGGER MSG] {printh $nick "You may only use this command in /MSG format for security purposes."; return 0}
+				if ![sbd:equal -nocase @LAST_TRIGGER MSG] {printh $nick "You may only use this command in /MSG format for security purposes."; return 0}
 			}
 
 			setdata $handle BITLY-USERNAME $2
@@ -216,7 +216,7 @@ proc SB:proc_twitter {nick host handle chan arg} {
 			if $dccokay {
 				if [sbd:equal -nocase @LAST_TRIGGER PUB] {printh $nick "You may not use this command in channel, for security purposes. Use either /MSG or .DCC to use this command."; return 0}
 			} else {
-				if [sbd:equal -nocase @LAST_TRIGGER MSG] {printh $nick "You may only use this command in /MSG format for security purposes."; return 0}
+				if ![sbd:equal -nocase @LAST_TRIGGER MSG] {printh $nick "You may only use this command in /MSG format for security purposes."; return 0}
 			}
 
 			setdata $handle BITLY-APIKEY $2
