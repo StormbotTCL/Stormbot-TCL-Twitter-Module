@@ -61,7 +61,7 @@ proc oauth:get_request_token {} {
 # second step
 # for twitter, oauth_verifier is pin
 # oauth_token & oauth_token_secret from get_request_token
-proc oauth::get_access_token {oauth_token oauth_token_secret oauth_verifier} {
+proc oauth:get_access_token {oauth_token oauth_token_secret oauth_verifier} {
 	set params [list [list oauth_token $oauth_token] [list oauth_verifier $oauth_verifier]]
 	set result [oauth:query_call $oauth::access_token_url POST $params]
 
@@ -92,6 +92,7 @@ proc oauth:query_call {url method params {sign_params {}} {token_secret {}}} {
 	foreach param $params {
 		dict append oauth_raw {*}$param
 	}
+
 	# second oauth_raw holds data to be signed but not placed in header
 	set oauth_raw_sign $oauth_raw
 	foreach key [dict keys $sign_params] {
@@ -114,12 +115,8 @@ proc oauth:query {url method oauth_header {query {}}} {
 	set data [http::data $token]
 	set ncode [http::ncode $token]
 	http::cleanup $token
-	# if {$ncode != 200} {
-		# error "OAuth failure: (code: $ncode) $data"
-		# return 0
-	# }
-	set result [json::json2dict $data]
-	if [string eq 401 $ncode] {error "[dict get $result error]. (code: $ncode)"; return 0}
+
+	if [string eq 401 $ncode] {error "$result. (code: $ncode)"; return 0}
 	if [string eq 403 $ncode] {error "You have reached your API limit, or you may already be (un)following this person. (code: $ncode)"; return 0}
 	if [string eq 404 $ncode] {error "The page that is trying to be accessed cannot be found. (code: $ncode)"; return 0}
 	if [string eq -1 $ncode] {error "Unknown error: $data"; return 0}
