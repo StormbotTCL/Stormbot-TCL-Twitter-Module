@@ -617,7 +617,7 @@ proc SB:proc_twitter {nick host handle chan arg} {
 			}
 
 			set retweets [list $result]
-			foreach rtw $result {
+			foreach rtw $retweets {
 				set id [dict get $rtw id]
 				set text [dict get $rtw text]
 			}
