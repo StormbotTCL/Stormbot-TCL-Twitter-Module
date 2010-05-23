@@ -61,7 +61,7 @@ proc oauth:get_request_token {} {
 # second step
 # for twitter, oauth_verifier is pin
 # oauth_token & oauth_token_secret from get_request_token
-proc oauth:get_access_token {oauth_token oauth_token_secret oauth_verifier} {
+proc oauth::get_access_token {oauth_token oauth_token_secret oauth_verifier} {
 	set params [list [list oauth_token $oauth_token] [list oauth_verifier $oauth_verifier]]
 	set result [oauth:query_call $oauth::access_token_url POST $params]
 
@@ -92,7 +92,6 @@ proc oauth:query_call {url method params {sign_params {}} {token_secret {}}} {
 	foreach param $params {
 		dict append oauth_raw {*}$param
 	}
-
 	# second oauth_raw holds data to be signed but not placed in header
 	set oauth_raw_sign $oauth_raw
 	foreach key [dict keys $sign_params] {
@@ -111,13 +110,27 @@ proc oauth:query_call {url method params {sign_params {}} {token_secret {}}} {
 # do http request with oauth header
 proc oauth:query {url method oauth_header {query {}}} {
 	set header [list Authorization [concat "OAuth" $oauth_header]]
-	set token [http::geturl $url -headers $header -query $query -method $method -timeout $oauth::timeout -binary 1]
+msghome OAUTH:HEADER($header)
+msghome OAUTH:QUERY($query)
+msghome OAUTH:METHOD($method)
+msghome OAUTH:URL($url)
+	set token [http::geturl $url -headers $header -query $query -method $method -timeout $oauth::timeout]
 	set data [http::data $token]
 	set ncode [http::ncode $token]
 	http::cleanup $token
-	if {$ncode != 200} {
-		error "OAuth failure: (code: $ncode) $data"
-	}
+	# if {$ncode != 200} {
+		# error "OAuth failure: (code: $ncode) $data"
+		# return 0
+	# }
+	set result [json::json2dict $data]
+	if [string eq 401 $ncode] {error "[dict get $result error]. (code: $ncode)"; return 0}
+	if [string eq 403 $ncode] {error "You have reached your API limit, or you may already be (un)following this person. (code: $ncode)"; return 0}
+	if [string eq 404 $ncode] {error "The page that is trying to be accessed cannot be found. (code: $ncode)"; return 0}
+	if [string eq -1 $ncode] {error "Unknown error: $data"; return 0}
+	if [string eq 400 $ncode] {error "Couldn't send/retrieve your tweet(s)/mentions/timeline/direct message/block list, please try again. (code: $ncode)"; return 0}
+	if [string eq 502 $ncode] {error "Twitter / Over capacity. (code: $ncode)"; return 0}
+	if [string eq 503 $ncode] {error "No available server to handle this request. (code: $ncode)"; return 0}
+
 	return $data
 }
 
@@ -146,6 +159,8 @@ proc oauth:params_signature {params} {
 # build signature as in section 9 of oauth spec
 # token_secret may be empty
 proc oauth:signature {url method params {token_secret {}}} {
+	# We want base URL for signing (remove ?params=...)
+	set url [l0 [split $url "?"]]
 	set base_string [oauth:uri_escape ${method}]&[oauth:uri_escape ${url}]&[oauth:uri_escape [oauth:params_signature $params]]
 	set key [oauth:uri_escape $oauth::consumer_secret]&[oauth:uri_escape $token_secret]
 	set signature [sha1::hmac -bin -key $key $base_string]
@@ -175,6 +190,33 @@ proc oauth:params_to_dict {params} {
 	return $answer
 }
 
+namespace eval twitter {
+	variable oauth_token
+	variable oauth_token_secret
+
+	# Twitter API URLs
+	variable status_url "http://api.twitter.com/1/statuses/update.json" ; # POST
+	variable status_del_url "http://api.twitter.com/1/statuses/destroy.json" ; # POST destroy.json?id=123
+	variable home_url "http://api.twitter.com/1/statuses/home_timeline.json" ; # GET home_timeline.json?since_id=12345
+	variable ment_url "http://api.twitter.com/1/statuses/mentions.json" ; # GET mentions.json?since_id=12345
+	variable dmsg_send_url "http://api.twitter.com/1/direct_messages/new.json" ; # POST new.json?user=noradio&text=test text
+	variable dmsg_list_url "http://api.twitter.com/1/direct_messages.json" ; # GET
+	variable dmsg_del_url "http://api.twitter.com/1/direct_messages/destroy.json" ; # POST destroy.json?id=12345
+	variable trends_url "http://api.twitter.com/1/trends.json" ; # GET
+	variable follow_url "http://api.twitter.com/1/friendships/create/twitterapi.json" ; # POST twitterapi.json?screen_name=noradio
+	variable unfollow_url "http://api.twitter.com/1/friendships/destroy.json" ; # POST destroy.json?screen_name=noradio
+	variable search_usr_url "http://api.twitter.com/1/users/search.json" ; # GET search.json?q=noradio
+	variable rate_limit_url "http://api.twitter.com/1/account/rate_limit_status.json" ; # GET
+	variable update_pro_url "http://api.twitter.com/1/account/update_profile.json" ; # POST
+	variable show_pro_url "http://api.twitter.com/1/users/show.json" ; # GET show.json?screen_name=noradio
+	variable block_add_url "http://api.twitter.com/1/blocks/create.json" ; # POST create.json?screen_name=noradio
+	variable block_del_url "http://api.twitter.com/1/blocks/destroy.json" ; # POST destroy.json?screen_name=noradio
+	variable block_chk_url "http://api.twitter.com/1/blocks/exists.json" ; # GET exists.json?screen_name=noradio
+	variable block_list_url "http://api.twitter.com/1/blocks/blocking.json" ; # GET
+	variable fav_list_url "http://api.twitter.com/1/favorites.json" ; # GET
+	variable retweet_url "http://api.twitter.com/1/statuses/retweet/" ; # POST id.json where id is the message id
+}
+
 proc SB:proc_twitter {nick host handle chan arg} {
 	set package_failed [sbdget TWITTER:PACKAGE_FAIL]
 	SB:setvariables
@@ -193,32 +235,32 @@ proc SB:proc_twitter {nick host handle chan arg} {
 		printh $nick ""
 		if [string eq ALL $u2] {
 			if [SB:checklevel [sbd:get USERLEVEL:BOTOWNER] $handle] {
-				printh $nick "\002 Storing your Twitter credentials\002"
+				printh $nick "\002 Storing your Twitter credentials/Locking Channel\002"
 				printh $nick "/msg $::botnick TWITTER SETKEY <consumer key>"
 				printh $nick "/msg $::botnick TWITTER SETSECRET <consumer secret>"
 				printh $nick "These are obtained by registering the bot as an app at: https://twitter.com/apps"
 				printh $nick ""
+				printh $nick "Syntax: $::botnick TWITTER RESTRICT <channel> (Only use twitter in this channel, must have 1000 access on the bot to set) - MUST BE SET!."
 			} else {
 				printh $nick "\002Client Option\002"
-					printh $nick "Syntax: $::botnick TWITTER RESTRICT <channel> (Only use twitter in this channel, must have 1000 access on the bot to set) - MUST BE SET!."
 					printh $nick "Syntax: $::botnick TWITTER DISPLAY <off/on> (Display the readable name of twitter user)"
 					printh $nick "Syntax: $::botnick TWITTER STATUS (Display the rate limit status of your account)"
 					printh $nick "Syntax: $::botnick TWITTER PROFILE SET (-name|-url|-location|-description) (Sets your profile information)"
-					printh $nick "Syntax: $::botnick TWITTER PROFILE VIEW <screen name> (View a users profile)"
-					printh $nick "Syntax: $::botnick TWITTER SEARCH <search query> (Search for a profile)"
 					printh $nick "Syntax: $::botnick TWITTER SHORTEN <number> (Set the length of url's that will be shortened. 12-20 recommended)"
 					printh $nick "Syntax: $::botnick TWITTER SHORTENER <option> (0=is.gd, 1=moourl.com, 2=bit.ly, 3=cli.gs)"
 					printh $nick "Syntax: $::botnick TWITTER BITLYUN (Your bit.ly account username)"
 					printh $nick "Syntax: $::botnick TWITTER BITLYAPI (Your bit.ly account API key)"
 				printh $nick ""
 				printh $nick "\002Client commands\002"
+					printh $nick "Syntax: $::botnick TWITTER REQTOKEN (Request your oAuth token)"
+					printh $nick "Syntax: $::botnick TWITTER ACCTOKEN <oauth token> <oauth token secret> <PIN from authentication url of $::botnick TWITTER REQTOKEN> (Use your token)"
 					printh $nick "Syntax: $::botnick TWITTER <message text> (Send a status update to twitter - 140 Char limit)"
-					printh $nick "Syntax: $::botnick TWITTER FOLLOW <name> (Follow a twitter user - Can only be used in Twitter channel)"
-					printh $nick "Syntax: $::botnick TWITTER UNFOLLOW <name> (Unfollow a twitter user)"
+					printh $nick "Syntax: $::botnick TWITTER DELETE <msg id #> (Delete a tweet YOU sent)"
+					printh $nick "Syntax: $::botnick TWITTER FOLLOW <screen name> (Follow a twitter user - Can only be used in Twitter channel)"
+					printh $nick "Syntax: $::botnick TWITTER UNFOLLOW <screen name> (Unfollow a twitter user)"
 					printh $nick "Syntax: $::botnick TWITTER FRIENDS (Displays your public timeline that includes your friends' tweets)"
 					printh $nick "Syntax: $::botnick TWITTER MENTIONS (Displays messages directed at you.)"
-					printh $nick "Syntax: $::botnick TWITTER RETWEET <name> <msg> (Retweet a message that you found interesting - 140 Char limit)"
-					printh $nick "Syntax: $::botnick TWITTER DELETE <msg id #> (Delete a tweet YOU sent)"
+					printh $nick "Syntax: $::botnick TWITTER RETWEET <id> (Retweet a message that you found interesting)"
 					printh $nick "Syntax: $::botnick TWITTER DIRECT SEND <name> <msg> (Send a direct message to a user - 140 Char limit)"
 					printh $nick "Syntax: $::botnick TWITTER DIRECT LIST (lists your direct messages and their id number)"
 					printh $nick "Syntax: $::botnick TWITTER DIRECT DEL <msg id #> (deletes a direct message)"
@@ -228,6 +270,8 @@ proc SB:proc_twitter {nick host handle chan arg} {
 					printh $nick "Syntax: $::botnick TWITTER BLOCK LIST (List your blocked people)"
 					printh $nick "Syntax: $::botnick TWITTER TRENDS (Displays the current top 10 trending topics with the search URL)"
 					printh $nick "Syntax: $::botnick TWITTER FAVORITES (Displays your favorited tweets)"
+					printh $nick "Syntax: $::botnick TWITTER PROFILE VIEW <screen name> (View a users profile)"
+					printh $nick "Syntax: $::botnick TWITTER SEARCH <screen name> (Search for a profile - returns the first 5 results)"
 			}
 		} else {
 			printh $nick "To see all available options, use: $::botnick TWITTER HELP ALL"
@@ -274,18 +318,6 @@ proc SB:proc_twitter {nick host handle chan arg} {
 			return 0
 		}
 
-		dis - disp - display {
-			# Display the readable format of a twitter user by their screen name
-			set offon [nozero [l0 $disp]]
-			if [isempty 2] {print $nick "Current TWITTER USER DISPLAY status: [offon $offon]"; return 0}
-			set 2 [string is true $2]
-
-			sbdset TWITTER:DISP $2
-			SB:botdatafile write
-			print $nick "Twitter user display is now: [stu [offon $2]]"
-			return 0
-		}
-
 		lc - lock* - chan - rest* {
 			set editaccess 1000
 			if ![SB:checkaccess $editaccess $handle $chan] {printh $nick "You are not permitted to edit this setting."; return 0}
@@ -313,6 +345,52 @@ proc SB:proc_twitter {nick host handle chan arg} {
 			sbdset TWITTER:HOME $thome
 			SB:botdatafile write
 			printh $nick "Setting the TWITTER command channel to ${thome}"
+			return 0
+		}
+
+		dis - disp - display {
+			# Display the readable format of a twitter user by their screen name
+			set offon [nozero [l0 $disp]]
+			if [isempty 2] {print $nick "Current TWITTER USER DISPLAY status: [offon $offon]"; return 0}
+			set 2 [string is true $2]
+
+			sbdset TWITTER:DISP $2
+			SB:botdatafile write
+			print $nick "Twitter user display is now: [stu [offon $2]]"
+			return 0
+		}
+
+		rate - ratelimit - stat - stats - status {
+			set twhome [sbdget TWITTER:HOME]
+			if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
+			if {[stl $chan] != [stl $twhome]} {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
+
+			# Use twitter:senddata process
+			if {[catch {twitter:senddata $handle $nick $twitter::rate_limit_url {} GET} result]} {
+				print $nick "Unable to retrieve your rate limit status. ($result)"
+				return 0
+			}
+
+			if {[dict exists $result error]} {
+				print $nick "Error: [dict get $result error]"
+				return 0
+			}
+
+			set status [list $result]
+
+			foreach stat $status {
+				set remaining_hits [dict get $stat remaining_hits ]
+				set hourly_limit [dict get $stat hourly_limit]
+				set reset_time_sec [dict get $stat reset_time_in_seconds]
+
+				if {$remaining_hits > 0} {
+					print $nick "Status: All good, $remaining_hits/$hourly_limit requests left, Resets: [clock format $reset_time_sec -format "%l:%M %p"]"
+					return 0
+				} else {
+					print $nick "Status: Rate limit exceeded, $remaining_hits/$hourly_limit requests left, Resets: [clock format $reset_time_sec -format "%l:%M %p"]"
+					return 0
+				}
+			}
 			return 0
 		}
 
@@ -374,29 +452,46 @@ proc SB:proc_twitter {nick host handle chan arg} {
 			return 0
 		}
 
-		rate - ratelimit - stat - stats - status {
+		rtok - reqtok - reqtoken - requesttoken {
 			set twhome [sbdget TWITTER:HOME]
 			if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
 			if {[stl $chan] != [stl $twhome]} {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
 
-			# Use twitter:senddata process ($handle $mode(opt.) $url $text(being sent) $query(if being used - the variable) $extra(optional variable))
-			set www [twitter:senddata $handle ratelimit account/rate_limit_status.json "" "" ""]
-			set data [l1 $www]
-			set status [list [json::json2dict $data]]
-
-			foreach stat $status {
-				set remaining_hits [dict get $stat remaining_hits ]
-				set hourly_limit [dict get $stat hourly_limit]
-				set reset_time_sec [dict get $stat reset_time_in_seconds]
-
-				if {$remaining_hits > 0} {
-					print $nick "Status: All good, $remaining_hits/$hourly_limit requests left, Resets: [clock format $reset_time_sec -format "%l:%M %p"]"
-					return 0
-				} else {
-					print $nick "Status: Rate limit exceeded, $remaining_hits/$hourly_limit requests left, Resets: [clock format $reset_time_sec -format "%l:%M %p"]"
-					return 0
-				}
+			if {[catch {oauth:get_request_token} data]} {
+				print $nick "Error: $data"
+				return 0
 			}
+
+			set url [dict get $data auth_url]
+			print $nick "To get your authentication verifier, visit ${url} and allow the application on your Twiter account."
+			print $nick "Once completed, use $::botnick TWITTER ACCTOKEN [dict get $data oauth_token] [dict get $data oauth_token_secret] <PIN from authorization URL of $::botnick TWITTER REQTOKEN>"
+			return 0
+		}
+
+		atok - acctok - acctoken - accesstoken {
+			set twhome [sbdget TWITTER:HOME]
+			if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
+			if {[stl $chan] != [stl $twhome]} {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
+
+			if [string eq "" $2e] {print $nick "USAGE: $::botnick TWITTER ACCTOKEN <oauth token> <oauth token secret> <pin>"; return 0}
+
+			set oauth_token $2
+			set oauth_token_secret $3
+			set pin $4
+
+			if {[catch {oauth:get_access_token $oauth_token $oauth_token_secret $pin} data]} {
+				print $nick "Error: $data"
+				return 0
+			}
+
+			set twitter::oauth_token [dict get $data oauth_token]
+			set twitter::oauth_token_secret [dict get $data oauth_token_secret]
+			set screen_name [dict get $data screen_name]
+
+			setdata $handle TWOAUTH "$twitter::oauth_token $twitter::oauth_token_secret $pin $screen_name"
+			save
+
+			print $nick "Successfully retrieved access token for ${screen_name}"
 			return 0
 		}
 
@@ -405,87 +500,76 @@ proc SB:proc_twitter {nick host handle chan arg} {
 			if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
 			if {[stl $chan] != [stl $twhome]} {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
 
-			set arg $2e
-
-			# This will reset all the MISC variables, but will have parsed the flags
-			checkflags5 flags arg $arg [list -name -url -location -description] 1 1
-
-			switch -exact -- $l0 {
+			switch -exact -- $l2 {
 				set {
-					if [isvalidflag $flags -name] {
-						# Update the name on your profile
-						# Use twitter:senddata process ($handle $mode(opt.) $url $text(being sent) $query(if being used - the variable) $extra(optional variable))
-						set www [twitter:senddata $handle "" account/update_profile.json "" $j1e name]
+					switch -exact -- $l3 {
+						name {
+							# Update the name on your profile
+							# Use twitter:senddata process
+							if {[catch {twitter:senddata $handle $nick $twitter::update_pro_url [list name $j4e]} result]} {
+								print $nick "Unable to update the name on your profile, please try again."
+								return 0
+							}
 
-						# Process 400 & Unknown Errors
-						set ncode [l0 $www]
-						set code [l2 $www]
-						set data [l1 $www]
-						if [string eq -1 $ncode] { error "Unknown error: $data" }
-						if [string eq 400 $ncode] {printh $nick "Unable to update your name, please try again. :: $code"; return 0}
+							print $nick "Your name has now been set to $j4e"
+							return 0
+						}
 
-						print $nick "Your name has now been set to $j0e"
-						return 0
-					}
+						url {
+							# Update the url on your profile
+							# Use twitter:senddata process
+							if {[catch {twitter:senddata $handle $nick $twitter::update_pro_url [list url $j4e]} result]} {
+								print $nick "Unable to update your url, please try again."
+								return 0
+							}
 
-					if [isvalidflag $flags -url] {
-						# Update the url on your profile
-						# Use twitter:senddata process ($handle $mode(opt.) $url $text(being sent) $query(if being used - the variable) $extra(optional variable))
-						set www [twitter:senddata $handle "" account/update_profile.json "" $j1e url]
+							print $nick "Your url has now been set to $j4e"
+							return 0
+						}
 
-						# Process 400 & Unknown Errors
-						set ncode [l0 $www]
-						set code [l2 $www]
-						set data [l1 $www]
-						if [string eq -1 $ncode] { error "Unknown error: $data" }
-						if [string eq 400 $ncode] {printh $nick "Unable to update your url, please try again. :: $code"; return 0}
+						loc - location {
+							# Update the location on your profile
+							# Use twitter:senddata process
+							if {[catch {twitter:senddata $handle $nick $twitter::update_pro_url [list location $j4e]} result]} {
+								print $nick "Unable to update your location, please try again."
+								return 0
+							}
 
-						print $nick "Your url has now been set to $j0e"
-						return 0
-					}
+							print $nick "Your location has now been set to $j4e"
+							return 0
+						}
 
-					if [isvalidflag $flags -location] {
-						# Update the location on your profile
-						# Use twitter:senddata process ($handle $mode(opt.) $url $text(being sent) $query(if being used - the variable) $extra(optional variable))
-						set www [twitter:senddata $handle "" account/update_profile.json "" $j1e location]
+						desc - description {
+							# Update the description on your profile
+							# Use twitter:senddata process
+							if {[catch {twitter:senddata $handle $nick $twitter::update_pro_url [list description $j4e]} result]} {
+								print $nick "Unable to update your description, please try again."
+								return 0
+							}
 
-						# Process 400 & Unknown Errors
-						set ncode [l0 $www]
-						set code [l2 $www]
-						set data [l1 $www]
-						if [string eq -1 $ncode] { error "Unknown error: $data" }
-						if [string eq 400 $ncode] {printh $nick "Unable to update your location, please try again. :: $code"; return 0}
-
-						print $nick "Your location has now been set to $j0e"
-						return 0
-					}
-
-					if [isvalidflag $flags -description] {
-						# Update the description on your profile
-						# Use twitter:senddata process ($handle $mode(opt.) $url $text(being sent) $query(if being used - the variable) $extra(optional variable))
-						set www [twitter:senddata $handle "" account/update_profile.json "" $j1e description]
-
-						# Process 400 & Unknown Errors
-						set ncode [l0 $www]
-						set code [l2 $www]
-						set data [l1 $www]
-						if [string eq -1 $ncode] { error "Unknown error: $data" }
-						if [string eq 400 $ncode] {printh $nick "Unable to update your description, please try again. :: $code"; return 0}
-
-						print $nick "Your description has now been set to $j0e"
-						return 0
+							if {[len $j4] > 160} {
+								print $nick "Please set a description less than 160 characters and try again."
+								return 0
+							} else {
+								print $nick "Your description has now been set to $j4e"
+								return 0
+							}
+							return 0
+						}
 					}
 					return 0
 				}
 
 				view - show {
-					set name $1
+					set name $3
 
-					# Use twitter:senddata process ($handle $mode(opt.) $url $text(being sent) $query(if being used - the variable) $extra(optional variable))
-					set www [twitter:senddata $handle "" users/show.json?screen_name=$name "" ""]
+					# Use twitter:senddata process
+					if {[catch {twitter:senddata $handle $nick $twitter::show_pro_url [list screen_name $name] GET} result]} {
+						print $nick "Unable to retrieve profile for $name."
+						return 0
+					}
 
-					set data [l1 $www]
-					set info [list [json::json2dict $data]]
+					set info [list $result]
 
 					foreach profile $info {
 						set id [dict get $profile id]
@@ -508,13 +592,6 @@ proc SB:proc_twitter {nick host handle chan arg} {
 						set tzone [dict get $profile time_zone]
 					}
 
-					# Process 400 & Unknown Errors
-					set ncode [l0 $www]
-					set code [l2 $www]
-					set data [l1 $www]
-					if [string eq -1 $ncode] { error "Unknown error: $data" }
-					if [string eq 400 $ncode] {printh $nick "Unable to update your description, please try again. :: $code"; return 0}
-
 					print $nick "\002${sname}'s Profile ($id)\002"
 					print $nick "Screen Name: $sname"
 					print $nick "Name: $name"
@@ -532,29 +609,23 @@ proc SB:proc_twitter {nick host handle chan arg} {
 		}
 
 		re - rt - retweet {
-			# Retweet: BOT twitter (or tw) retweet (or rt) <name> <msg> to retweet a message
+			# Retweet: BOT twitter (or tw) retweet (or rt) <id> to retweet a message
 			set twhome [sbdget TWITTER:HOME]
 			if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
 			if {[stl $chan] != [stl $twhome]} {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
 
-			set full "rt @[string trimleft $j2e @]"
+			# Use twitter:senddata process
+			if {[catch {twitter:senddata $handle $nick "${twitter::retweet_url}${2}.json" {} POST} result]} {
+				print $nick "Retweet failure! ($2) You can't retweet your own updates!"
+				return 0
+			}
 
-			# Use twitter:senddata process ($handle $mode(opt.) $url $text(being sent) $query(if being used - the variable) $extra(optional variable))
-			set www [twitter:senddata $handle retweet statuses/update.json $full "" status]
-
-			# Process for 403 Forbidden Response error
-			set ncode [l0 $www]
-			if [string eq 403 $ncode] {printh $nick "You have reached your API limit. Cannot send tweet."; return 0}
-
-			# Process for 404 Page Not Found error
-			if [string eq 404 $ncode] {printh $nick "The page that is trying to be accessed cannot be found."; return 0}
-
-			# Process 400 & Unknown Errors
-			set code [l2 $www]
-			set data [l1 $www]
-			if [string eq -1 $ncode] { error "Unknown error: $data" }
-			if [string eq 400 $ncode] {printh $nick "Couldn't send your tweet, please try again :: $code"; return 0}
-
+			set retweets [list $result]
+			foreach rtw $result {
+				set id [dict get $rtw id]
+				set text [dict get $rtw text]
+			}
+			print $nick "Your retweet has been submitted: $text (MSG ID: $id)"
 			return 0
 		}
 
@@ -566,23 +637,30 @@ proc SB:proc_twitter {nick host handle chan arg} {
 					if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
 					if {[stl $chan] != [stl $twhome]} {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
 
-					set text $j4e
+					set params [list screen_name $3 text [twitter:urlshorten $handle [twitter:replacetext $j4e]]]
 
-					# Use twitter:senddata process ($handle $mode(opt.) $url $text(being sent) $query(if being used - the variable) $extra(optional variable) $dmto(opt.))
-					set www [twitter:senddata $handle direct direct_messages/new.json $text "" [list text user] $3]
+					# Use twitter:senddata process
+					if {[catch {twitter:senddata $handle $nick $twitter::dmsg_send_url $params} result]} {
+						print $nick "Message to \002$3\002 failed! Are they following you?"
+						return 0
+					} elseif {[len $j3e] > 140} {
+						set old_text $j4e
+						set truncate 140
+						set text [twitter:urlshorten $handle [twitter:replacetext $j4e]]
 
-					# Process for 403 Forbidden Response error
-					set ncode [l0 $www]
-					if [string eq 403 $ncode] {printh $nick "You have reached your API limit. Cannot send direct message."; return 0}
-
-					# Process for 404 Page Not Found error
-					if [string eq 404 $ncode] {printh $nick "The page that is trying to be accessed cannot be found."; return 0}
-
-					# Process 400 & Unknown Errors
-					set code [l2 $www]
-					set data [l1 $www]
-					if [string eq -1 $ncode] { error "Unknown error: $data" }
-					if [string eq 400 $ncode] {printh $nick "Couldn't send your direct message, please try again :: $code"; return 0}
+						print $nick "I've shortened this to a total of [len $text] characters, yet it's still too long. Use a service like http://www.twitlonger.com to submit this tweet, or send in multiple parts."
+						print $nick "Submitted text: $old_text"
+						print $nick "Shortened text: $text"
+						print $nick "Snipped at: [mid $text [expr $truncate + 1] 40]"
+						print $nick "Your direct message could not be sent to: $3"
+						return 0
+					} else {
+						set direct [list $result]
+						foreach dm $direct {
+							set id [dict get $dm id]
+						}
+						print $nick "Your direct message has been sent to: $3 (MSG ID: $id)"
+					}
 
 					return 0
 				}
@@ -593,35 +671,24 @@ proc SB:proc_twitter {nick host handle chan arg} {
 					if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
 					if {[stl $chan] != [stl $twhome]} {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
 
-					# Use twitter:senddata process ($handle $mode(opt.) $url $text(being sent) $query(if being used - the variable) $extra(optional variable) $dmto(opt.))
-					set www [twitter:senddata $handle "" direct_messages.json "" ""]
-
-					# Process for 403 Forbidden Response error
-					set ncode [l0 $www]
-					if [string eq 403 $ncode] {printh $nick "You have reached your API limit. Cannot view your direct messages."; return 0}
-
-					# Process for 404 Page Not Found error
-					if [string eq 404 $ncode] {printh $nick "The page that is trying to be accessed cannot be found."; return 0}
-
-					# Process 400 & Unknown Errors
-					set code [l2 $www]
-					set data [l1 $www]
-					if [string eq -1 $ncode] { error "Unknown error: $data" }
-					if [string eq 400 $ncode] {printh $nick "Couldn't retrieve your direct message, please try again :: $code"; return 0}
+					# Use twitter:senddata process
+					if {[catch {twitter:senddata $handle $nick $twitter::dmsg_list_url} result]} {
+						print $nick "Message retrieval failed."
+						return 0
+					}
 
 					# Retrieve direct messages
-					set msgs [lreverse [json::json2dict $data]]
+					set msgs [lreverse $result]
 					set x 0
 					foreach msg $msgs {
-						incr x
 						set id [dict get $msg id]
-						set text [dict get $msg text]
-                              set sent [formattime [twitter:converttime [dict get $msg created_at]] $handle]
+						set text [twitter:convert-unicode [SB:convert_html_codes [dict get $msg text]]]
+						set sent [formattime [twitter:converttime [dict get $msg created_at]] $handle]
+						set sender [dict get $msg sender_screen_name]
 						set senderinfo [dict get $msg sender]
-						set sender [dict get $senderinfo screen_name]
 						set name [dict get $senderinfo name]
 
-						print $nick "$x. $name ($sender) sent: $text ($sent)(Msg ID: $id)"
+						print $nick "[incr x]. From $name ($sender) sent: $text ($sent)(Msg ID: $id)"
 					}
 
 					return 0
@@ -629,28 +696,17 @@ proc SB:proc_twitter {nick host handle chan arg} {
 
 				"-" - del* {
 					# BOT twitter (or tw) dm del <msg id #> Delete Direct messages
-					# http://twitter.com/direct_messages/destroy/id.format - id = msg number (use list to get number)
 					set twhome [sbdget TWITTER:HOME]
 					if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
 					if {[stl $chan] != [stl $twhome]} {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
 
-					set id $3
-
-					# Use twitter:senddata process ($handle $mode(opt.) $url $text(being sent) $query(if being used - the variable) $extra(optional variable) $dmto(opt.))
-					set www [twitter:senddata $handle "" direct_messages/destroy/$id.json "" $id id]
-
-					# Process for 404 Page Not Found error
-					set ncode [l0 $www]
-					if [string eq 404 $ncode] {printh $nick "The page that is trying to be accessed cannot be found."; return 0}
-
-					# Process 400 & Unknown Errors
-					set code [l2 $www]
-					set data [l1 $www]
-					if [string eq -1 $ncode] { error "Unknown error: $data" }
-					if [string eq 400 $ncode] {printh $nick "Couldn't retrieve your direct messages, please try again :: $code"; return 0}
+					# Use twitter:senddata process
+					if {[catch {twitter:senddata $handle $nick $twitter::dmsg_del_url [list id $3]} result]} {
+						print $nick "Error! Message couldn't be deleted."
+					}
 
 					# Retrieve message for deletion
-					set msg [list [json::json2dict $data]]
+					set msg [list $result]
 					foreach a $msg {
 						set sendinfo [dict get $a sender]
 						set sender [dict get $sendinfo name]
@@ -675,22 +731,13 @@ proc SB:proc_twitter {nick host handle chan arg} {
 					if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
 					if {[stl $chan] != [stl $twhome]} {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
 
-					set sid $3
+					# Use twitter:senddata process
+					if {[catch {twitter:senddata $handle $nick $twitter::block_add_url [list screen_name $3]} result]} {
+						print $nick "Unable to add $3 to block list."
+						return 0
+					}
 
-					# Use twitter:senddata process ($handle $mode(opt.) $url $text(being sent) $query(if being used - the variable) $extra(optional variable))
-					set www [twitter:senddata $handle block blocks/create/${sid}.json "" ""]
-
-					# Process for 404 Page Not Found error
-					set ncode [l0 $www]
-					if [string eq 404 $ncode] {printh $nick "The page that is trying to be accessed cannot be found."; return 0}
-
-					# Process 400 & Unknown Errors
-					set code [l2 $www]
-					set data [l1 $www]
-					if [string eq -1 $ncode] { error "Unknown error: $data" }
-					if [string eq 400 $ncode] {printh $nick "Couldn't retrieve the page you are requesting, please try again :: $code"; return 0}
-
-					set nfo [list [json::json2dict $data]]
+					set nfo [list $result]
 					foreach a $nfo {
 						set id [dict get $a id]
 						set sname [dict get $a screen_name]
@@ -706,22 +753,13 @@ proc SB:proc_twitter {nick host handle chan arg} {
 					if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
 					if {[stl $chan] != [stl $twhome]} {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
 
-					set sid $3
+					# Use twitter:senddata process
+					if {[catch {twitter:senddata $handle $nick $twitter::block_del_url [list screen_name $3]} result]} {
+						print $nick "Unable to remove $3 from block list."
+						return 0
+					}
 
-					# Use twitter:senddata process ($handle $mode(opt.) $url $text(being sent) $query(if being used - the variable) $extra(optional variable))
-					set www [twitter:senddata $handle block blocks/destroy/${sid}.json "" ""]
-
-					# Process for 404 Page Not Found error
-					set ncode [l0 $www]
-					if [string eq 404 $ncode] {printh $nick "The page that is trying to be accessed cannot be found."; return 0}
-
-					# Process 400 & Unknown Errors
-					set code [l2 $www]
-					set data [l1 $www]
-					if [string eq -1 $ncode] { error "Unknown error: $data" }
-					if [string eq 400 $ncode] {printh $nick "Couldn't retrieve the page you are requesting, please try again :: $code"; return 0}
-
-					set nfo [list [json::json2dict $data]]
+					set nfo [list $result]
 					foreach a $nfo {
 						set id [dict get $a id]
 						set sname [dict get $a screen_name]
@@ -737,22 +775,17 @@ proc SB:proc_twitter {nick host handle chan arg} {
 					if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
 					if {[stl $chan] != [stl $twhome]} {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
 
-					set sid $3
+					# Use twitter:senddata process
+					if {[catch {twitter:senddata $handle $nick $twitter::block_chk_url [list screen_name $3] GET} result]} {
+						print $nick "Unable to check your block list, please try again. ($result)"
+						return 0
+					}
 
-					# Use twitter:senddata process ($handle $mode(opt.) $url $text(being sent) $query(if being used - the variable) $extra(optional variable))
-					set www [twitter:senddata $handle "" blocks/exists/${sid}.json "" ""]
+					if {[dict exists $result error]} {
+						print $nick "$result, $3."
+					}
 
-					# Process for 404 Page Not Found error
-					set ncode [l0 $www]
-					if [string eq 404 $ncode] {printh $nick "You are not blocking this user."; return 0}
-
-					# Process 400 & Unknown Errors
-					set code [l2 $www]
-					set data [l1 $www]
-					if [string eq -1 $ncode] { error "Unknown error: $data" }
-					if [string eq 400 $ncode] {printh $nick "Couldn't retrieve the page you are requesting, please try again :: $code"; return 0}
-
-					set nfo [list [json::json2dict $data]]
+					set nfo [list $result]
 					foreach a $nfo {
 						set id [dict get $a id]
 						set sname [dict get $a screen_name]
@@ -768,28 +801,20 @@ proc SB:proc_twitter {nick host handle chan arg} {
 					if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
 					if {[stl $chan] != [stl $twhome]} {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
 
-					# Use twitter:senddata process ($handle $mode(opt.) $url $text(being sent) $query(if being used - the variable) $extra(optional variable))
-					set www [twitter:senddata $handle "" blocks/blocking.json "" ""]
+					# Use twitter:senddata process
+					if {[catch {twitter:senddata $handle $nick $twitter::block_list_url} result]} {
+						print $nick "Unable to retrieve your block list."
+						return 0
+					}
 
-					# Process for 404 Page Not Found error
-					set ncode [l0 $www]
-					if [string eq 404 $ncode] {printh $nick "You are not blocking this user."; return 0}
-
-					# Process 400 & Unknown Errors
-					set code [l2 $www]
-					set data [l1 $www]
-					if [string eq -1 $ncode] { error "Unknown error: $data" }
-					if [string eq 400 $ncode] {printh $nick "Couldn't retrieve the page you are requesting, please try again :: $code"; return 0}
-
-					set nfo [lreverse [json::json2dict $data]]
+					set nfo [lreverse $result]
 					set x 0
 					foreach a $nfo {
-						incr x
 						set id [dict get $a id]
 						set sname [dict get $a screen_name]
 						set name [dict get $a name]
 
-						print $nick "$x. $sname ($name) - ID: $id"
+						print $nick "[incr x]. $sname ($name) - ID: $id"
 					}
 					return 0
 				}
@@ -806,21 +831,13 @@ proc SB:proc_twitter {nick host handle chan arg} {
 			set twfreply [getdata $handle since_freplies_id]
 			if [isempty twfreply] { set twfreply 1 }
 
-			# Use twitter:senddata process ($handle $mode(opt.) $url $text(being sent) $query(if being used - the variable) $extra(optional variable))
-			set www [twitter:senddata $handle friend statuses/home_timeline.json "" "" "since_id=$twfreply"]
+			# Use twitter:senddata process
+			if {[catch {twitter:senddata $handle $nick $twitter::home_url [list since_reply $twfreply]} result]} {
+				print $nick "Retrieval error. ($result)"
+				return 0
+			}
 
-			set data [l1 $www]
-			set ncode [l0 $www]
-			set code [l2 $www]
-
-			set replies [lreverse [json::json2dict $data]]
-
-			# Process 400 & Unknown Errors
-			if [string eq -1 $ncode] { error "Unknown error: $data" }
-			if [string eq 400 $ncode] {printh $nick "Couldn't retrieve your friend time line, will try again :: $code"; return 0}
-
-			# Process for 404 Page Not Found error
-			if [string eq 404 $ncode] {printh $nick "The page that is trying to be accessed cannot be found."; return 0}
+			set replies [lreverse $result]
 
 			foreach reply $replies {
 				set id [dict get $reply id]
@@ -831,7 +848,7 @@ proc SB:proc_twitter {nick host handle chan arg} {
 				set source [dict get $reply source]
 				regexp -nocase -- {<a.+?>(.+?)</a>} $source all source
 
-					set date [formattime [twitter:converttime [dict get $reply created_at]] $handle]
+				set date [formattime [twitter:converttime [dict get $reply created_at]] $handle]
 
 				set text [twitter:convert-unicode [SB:convert_html_codes [dict get $reply text]]]
 				# Replace utf-8 entities that aren't covered by SB:convert_html_codes
@@ -839,15 +856,15 @@ proc SB:proc_twitter {nick host handle chan arg} {
 
 				if {[getdata $handle TWNAME] == $uname} {
 					if {[sbdget TWITTER:DISP]} {
-						print $nick "[color 13]$uname ($name): $text (Posted: $date) via $source[color] (MSG ID: $id)"
+						print $nick "[color 13]\002$uname ($name)\002: $text (Posted: $date) via $source[color] (MSG ID: $id)"
 					} else {
-						print $nick "[color 13]$uname: $text (Posted: $date) via $source[color] (MSG ID: $id)"
+						print $nick "[color 13]\002$uname\002: $text (Posted: $date) via $source[color] (MSG ID: $id)"
 					}
 				} else {
 					if {[sbdget TWITTER:DISP]} {
-						print $nick "$uname ($name): $text (Posted: $date) via $source (MSG ID: $id)"
+						print $nick "\002$uname ($name)\002: $text (Posted: $date) via $source (MSG ID: $id)"
 					} else {
-						print $nick "$uname: $text (Posted: $date) via $source (MSG ID: $id)"
+						print $nick "\002$uname\002: $text (Posted: $date) via $source (MSG ID: $id)"
 					}
 				}
 
@@ -866,18 +883,13 @@ proc SB:proc_twitter {nick host handle chan arg} {
 			set twreply [getdata $handle since_replies]
 			if [isempty twreply] { set twreply 1 }
 
-			# Use twitter:senddata process ($handle $mode(opt.) $url $text(being sent) $query(if being used - the variable) $extra(optional variable))
-			set www [twitter:senddata $handle mentions statuses/mentions.json "" "" "since_id=$twreply"]
+			# Use twitter:senddata process
+			if {[catch {twitter:senddata $handle $nick $twitter::ment_url [list since_id $twreply]} result]} {
+				print $nick "Unable to retrieve your mentions time line."
+				return 0
+			}
 
-			set data [l1 $www]
-			set ncode [l0 $www]
-			set code [l2 $www]
-
-			set replies [lreverse [json::json2dict $data]]
-
-			# Process 400 & Unknown Errors
-			if [string eq -1 $ncode] { error "Unknown error: $data" }
-			if [string eq 400 $ncode] {printh $nick "Couldn't retrieve your mentions time line, will try again :: $code"; return 0}
+			set replies [lreverse $result]
 
 			foreach reply $replies {
 				set id [dict get $reply id]
@@ -888,16 +900,16 @@ proc SB:proc_twitter {nick host handle chan arg} {
 				set source [dict get $reply source]
 				regexp -all -nocase -- {<a.+?>(.+?)</a>} $source all source
 
-                    set date [formattime [twitter:converttime [dict get $reply created_at]] $handle]
+				set date [formattime [twitter:converttime [dict get $reply created_at]] $handle]
 
 				set text [twitter:convert-unicode [SB:convert_html_codes [dict get $reply text]]]
 				# Replace utf-8 entities that aren't covered by SB:convert_html_codes
 				foreach {a b} [list \u2014 -- \u2019 ' \u2018 ' &#8212\\\; -- \u2013 -] {regsub -all $a $text $b text}
 
 				if {[sbdget TWITTER:DISP]} {
-					print $nick "$uname ($name): $text (Posted: $date) via $source (MSG ID: $id)"
+					print $nick "\002$uname ($name)\002: $text (Posted: $date) via $source (MSG ID: $id)"
 				} else {
-					print $nick "$uname: $text (Posted: $date) via $source (MSG ID: $id)"
+					print $nick "\002$uname\002: $text (Posted: $date) via $source (MSG ID: $id)"
 				}
 
 				setdata $handle since_replies $id
@@ -913,15 +925,15 @@ proc SB:proc_twitter {nick host handle chan arg} {
 			if {[stl $chan] != [stl $twhome]} { print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
 			if [isempty l2] {print $nick "You must input a twitter account to follow."; return 0}
 
-			# Use twitter:senddata process ($handle $mode(opt.) $url $text(being sent) $query(if being used - the variable) $extra(optional variable))
-			set www [twitter:senddata $handle friend friendships/create/$jl2.json?follow=true "" $l2 screen_name]
+			# Use twitter:senddata process
+			if {[catch {twitter:senddata $handle $nick $twitter::follow_url [list screen_name $l2]} result]} {
+				return 0
+			}
 
-			# Process for 403 Forbidden Response error
-			set ncode [l0 $www]
-			if [string eq 403 $ncode] {printh $nick "You are already following [stu $l2]"; return 0}
-
-			# Process for 404 Page Not Found error
-			if [string eq 404 $ncode] {printh $nick "The page that is trying to be accessed cannot be found."; return 0}
+			if {[dict exists $result error]} {
+				print $nick "Follow failed ($l2): [dict get $result error]"
+				return 0
+			}
 
 			print $nick "You are now following: [color 8][stu $l2][color]"
 			return 0
@@ -934,15 +946,15 @@ proc SB:proc_twitter {nick host handle chan arg} {
 			if {[stl $chan] != [stl $twhome]} { print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
 			if [isempty l2] {print $nick "You must input a twitter account to unfollow."; return 0}
 
-			# Use twitter:senddata process ($handle $mode(opt.) $url $text(being sent) $query(if being used - the variable) $extra(optional variable))
-			set www [twitter:senddata $handle friend friendships/destroy/$jl2.json?follow=true "" $l2 screen_name]
+			# Use twitter:senddata process
+			if {[catch {twitter:senddata $handle $nick $twitter::unfollow_url [list screen_name $l2]} result]} {
+				return 0
+			}
 
-			# Process for 403 Forbidden Response error
-			set ncode [l0 $www]
-			if [string eq 403 $ncode] {printh $nick "You are already unfollowing [stu $l2]"; return 0}
-
-			# Process for 404 Page Not Found error
-			if [string eq 404 $ncode] {printh $nick "The page that is trying to be accessed cannot be found."; return 0}
+			if {[dict exists $result error]} {
+				print $nick "Unfollow failed ($l2): [dict get $result error]"
+				return 0
+			}
 
 			print $nick "You are now unfollowing: [color 8][stu $l2][color]"
 			return 0
@@ -955,15 +967,13 @@ proc SB:proc_twitter {nick host handle chan arg} {
 			if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
 			if {[stl $chan] != [stl $twhome]} {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
 
-			# Use twitter:senddata process ($handle $mode(opt.) $url $text(being sent) $query(if being used - the variable) $extra(optional variable))
-			set www [twitter:senddata $handle trends trends.json "" ""]
-			set data [l1 $www]
-			set ncode [l0 $www]
+			# Use twitter:senddata process
+			if {[catch {twitter:senddata $handle $nick $twitter::trends_url} result]} {
+				print $nick "Trends fetch failed."
+				return 0
+			}
 
-			# Process for 404 Page Not Found error
-			if [string eq 404 $ncode] {printh $nick "The page that is trying to be accessed cannot be found."; return 0}
-
-			set trending [list [json::json2dict $data]]
+			set trending [list $result]
 
 			foreach t $trending {
 				set trends [dict get $t trends]
@@ -975,11 +985,10 @@ proc SB:proc_twitter {nick host handle chan arg} {
 				set x 0
 
 				foreach a $trends {
-					incr x
 					set name [dict get $a name]
 					set url [dict get $a url]
 
-					print $nick "$x. $name - $url"
+					print $nick "[incr x]. $name - $url"
 				}
 
 				print $nick "Last update: $asof"
@@ -1014,27 +1023,33 @@ proc SB:proc_twitter {nick host handle chan arg} {
 			set user $2e
 			regsub -all -nocase " " $user "%20" user
 
-			# Use twitter:senddata process ($handle $mode(opt.) $url $text(being sent) $query(if being used - the variable) $extra(optional variable))
-			set www [twitter:senddata $handle "" users/search.json "" "" "q=${user}"]
+			set url ${twitter::search_usr_url}?[http::formatQuery q ${user} per_page 5]
 
-			set data [l1 $www]
-			set lists [lreverse [json::json2dict $data]]
+			# Use twitter:senddata process
+			if {[catch {twitter:senddata $handle $nick $url [list q ${user} per_page 5] GET} data]} {
+				print $nick "Search error (${user}) - ($data)"
+				return 0
+			}
+
+			if {[dict get $data error]} {
+				print $nick "Search failed (${user}): [dict get $data error]"
+				return 0
+			}
+
+			set result [lreverse $data]
 			set x 0
 
-			foreach u $lists {
-				incr x
+			foreach u $result {
 				set name [dict get $u name]
 				set screen_name [dict get $u screen_name]
 				set location [dict get $u location]
-				set verified [dict get $u verified]
 				set desc [dict get $u description]
 				set follow [dict get $u following]
 				set created [clock format [clock scan [lreplace [split [dict get $u created_at]] 4 4] -gmt true] -format "%a, %b %d, %Y @ %r %Z"]
 
-				print $nick "$x. \002$name ($screen_name)\002"
+				print $nick "[incr x]. \002$name ($screen_name)\002"
 				print $nick "Description: $desc"
 				print $nick "Location: $location"
-				print $nick "Verified: $verified"
 				print $nick "Following: $follow"
 				print $nick "Created: $created"
 			}
@@ -1049,23 +1064,16 @@ proc SB:proc_twitter {nick host handle chan arg} {
 			if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
 			if {[stl $chan] != [stl $twhome]} {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
 
-			# Use twitter:senddata process ($handle $mode(opt.) $url $text(being sent) $query(if being used - the variable) $extra(optional variable))
-			set www [twitter:senddata $handle "" favorites.json "" ""]
-			set data [l1 $www]
-			set ncode [l0 $www]
+			# Use twitter:senddata process
+			if {[catch {twitter:senddata $handle $nick $twitter::fav_list_url} result]} {
+				print $nick "Unable to retrieve your favorites list."
+				return 0
+			}
 
-			set fav [lreverse [json::json2dict $data]]
+			set fav [lreverse $result]
 			set x 0
 
-			# Process 400 & Unknown Errors
-			if [string eq -1 $ncode] { error "Unknown error: $data" }
-			if [string eq 400 $ncode] {printh $nick "Couldn't retrieve your friend time line, will try again :: $code"; return 0}
-
-			# Process for 404 Page Not Found error
-			if [string eq 404 $ncode] {printh $nick "The page that is trying to be accessed cannot be found."; return 0}
-
 			foreach f $fav {
-				incr x
 				set user [dict get $f user]
 				set uname [dict get $user screen_name]
 				set name [dict get $user name]
@@ -1081,15 +1089,15 @@ proc SB:proc_twitter {nick host handle chan arg} {
 
 				if {[getdata $handle TWNAME] == $uname} {
 					if {[sbdget TWITTER:DISP]} {
-						print $nick "$x. [color 13]$uname ($name): $text (Posted: $date) via $source[color]"
+						print $nick "[incr x]. [color 13]$uname ($name): $text (Posted: $date) via $source[color]"
 					} else {
-						print $nick "$x. [color 13]$uname: $text (Posted: $date) via $source[color]"
+						print $nick "[incr x]. [color 13]$uname: $text (Posted: $date) via $source[color]"
 					}
 				} else {
 					if {[sbdget TWITTER:DISP]} {
-						print $nick "$x. $uname ($name): $text (Posted: $date) via $source"
+						print $nick "[incr x]. $uname ($name): $text (Posted: $date) via $source"
 					} else {
-						print $nick "$x. $uname: $text (Posted: $date) via $source"
+						print $nick "[incr x]. $uname: $text (Posted: $date) via $source"
 					}
 				}
 			}
@@ -1104,23 +1112,14 @@ proc SB:proc_twitter {nick host handle chan arg} {
 			if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
 			if {[stl $chan] != [stl $twhome]} {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
 
-			set id $2
-
-			# Use twitter:senddata process ($handle $mode(opt.) $url $text(being sent) $query(if being used - the variable) $extra(optional variable))
-			set www [twitter:senddata $handle deltweet statuses/destroy.json "" $id id]
-
-			# Process for 404 Page Not Found error
-			set ncode [l0 $www]
-			if [string eq 404 $ncode] {printh $nick "The page that is trying to be accessed cannot be found."; return 0}
-
-			# Process 400 & Unknown Errors
-			set code [l2 $www]
-			set data [l1 $www]
-			if [string eq -1 $ncode] { error "Unknown error: $data" }
-			if [string eq 400 $ncode] {printh $nick "Couldn't retrieve your tweets, please try again :: $code"; return 0}
+			# Use twitter:senddata process
+			if {[catch {twitter:senddata $handle $nick $twitter::status_del_url [list id $2]} result]} {
+				print $nick "Unable to delete tweet (does it exist?)"
+				return 0
+			}
 
 			# Retrieve tweet for deletion
-			set tweet [list [json::json2dict $data]]
+			set tweet [list $result]
 			foreach a $tweet {
 				set text [dict get $a text]
 				set id [dict get $a id]
@@ -1136,68 +1135,63 @@ proc SB:proc_twitter {nick host handle chan arg} {
 			if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
 			if {[stl $chan] != [stl $twhome]} {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
 
-			set text $j1e
+			# Use twitter:senddata process
+			if {[catch {twitter:senddata $handle $nick $twitter::status_url [list status [twitter:urlshorten $handle [twitter:replacetext $j1e]]]} result]} {
+				print $nick "Error: Unable to post tweet."
+				return 0
+			} elseif {[len $j1e] > 140} {
+				set old_text $j1e
+				set truncate 140
+				set text [twitter:urlshorten $handle [twitter:replacetext $j1e]]
 
-			# Use twitter:senddata process ($handle $mode(opt.) $url $text(being sent) $query(if being used - the variable) $extra(optional variable))
-			set www [twitter:senddata $handle tweet statuses/update.json $text "" status]
-
-			# Process for 403 Forbidden Response error
-			set ncode [l0 $www]
-			if [string eq 403 $ncode] {printh $nick "You have reached your API limit. Cannot send tweet."; return 0}
-
-			# Process for 404 Page Not Found error
-			if [string eq 404 $ncode] {printh $nick "The page that is trying to be accessed cannot be found."; return 0}
-
-			# Process 400 & Unknown Errors
-			set code [l2 $www]
-			set data [l1 $www]
-			if [string eq -1 $ncode] {error "Unknown error: $data"}
-			if [string eq 400 $ncode] {printh $nick "Couldn't send your tweet, please try again :: $code"; return 0}
-
+				print $nick "I've shortened this to a total of [len $text] characters, yet it's still too long. Use a service like http://www.twitlonger.com to submit this tweet, or send in multiple parts."
+				print $nick "Submitted text: $old_text"
+				print $nick "Shortened text: $text"
+				print $nick "Snipped at: [mid $text [expr $truncate + 1] 40]"
+				print $nick "Your tweet could not be submitted."
+				return 0
+			} else {
+				set tweets [list $result]
+				foreach tw $tweets {
+					set id [dict get $tw id]
+					set text [dict get $tw text]
+				}
+				print $nick "Your tweet has been submitted: $text (MSG ID: $id)"
+				return 0
+			}
 			return 0
 		}
 	}
 }
 
-# Generates the HTTP authentication header that we'll need to use
-# Code courtesy of http://www.robsayers.com/programming/Twittertcl.html
-proc authheader {username passwd} { list Authorization [concat Basic [base64::encode [join $username]:[join $passwd]]] }
-
-# Process to send data to Twitter - Thank you Mai for writing this, wouldn't have thought to do it this way
-# Enter with:
-#     $HANDLE (handle of person sending data)
-#     $MODE (retweet, or whatever we're doing: this is optional)
-#     $URL (status/update.json)
-#     $TEXT (whatever text you're sending)
-#     $QUERY (HTTP query variable to use)
-#     $EXTRA (optional variable, needed for (re)tweet, (un)follow, direct message)
-#     $DMTO (for direct message, variable holding person you are sending to)
-
-proc twitter:senddata { handle mode url text query { extra "" } { dmto "" } } {
-	upvar 1 nick nick
-	upvar 1 query q
-
-	# Hard variables
-	set truncate 140
-	set complain 0; # Set to 1 to throw a bead error for when messages are > 140 characters
-
-	set headers [authheader [getdata $handle TWNAME] [getdata $handle TWPSWD]]
-
-	if [string eq "trends" $mode] {
-		set url "http://search.twitter.com/${url}"
-	} elseif [string eq "list" $mode] {
-		set url "http://api.twitter.com/1/[getdata $handle TWNAME]/${url}"
-	} elseif [isempty extra] {
-		set url "http://twitter.com/${url}"
-	} elseif {([isempty query] && ([string eq "tweet" $mode] || [string eq "retweet" $mode] || [string eq "direct" $mode]))} {
-		set url "http://twitter.com/${url}"
-	} elseif {([notempty extra] && [isempty query])} {
-		set url "http://twitter.com/${url}?${extra}"
+# Process to send data to Twitter
+proc twitter:senddata { handle nick url {query_list {}} {http_method {}} } {
+	# Set http method of query
+	if {[isempty http_method] && [notempty query_list]} {
+		set method POST
+	} elseif {[isempty http_method] && [isempty query_list]} {
+		set method GET
 	} else {
-		set url "http://twitter.com/${url}"
+		set method $http_method
+	}
+msghome TWITTER:METHOD($method)
+msghome TWITTER:QUERY($query_list)
+	set x [split [getdata $handle TWOAUTH]]
+	set oauth_token [l0 $x]
+	set oauth_token_secret [l1 $x]
+
+	if {[isempty oauth_token] || [isempty oauth_token_secret]} {
+		print $nick "Error: oAuth not initialized. Use $::botnick TWITTER REQTOKEN"
+		return 0
 	}
 
-	# Work with URL shorteners
+	set data [oauth:query_api $url $method $oauth_token $oauth_token_secret $query_list]
+msghome TWITTER:DATA($data)
+	return [json::json2dict $data]
+}
+
+# Work with URL shorteners
+proc twitter:urlshorten {handle text} {
 	set newtext ""
 	foreach word [split $text] {
 		if {[regexp {^www\.} $word] && ([string length $word] > [expr {[getdata $handle TWSHORTEN] + 6}])} {
@@ -1208,149 +1202,10 @@ proc twitter:senddata { handle mode url text query { extra "" } { dmto "" } } {
 			append newtext "$word "
 		}
 	}
-
-	set text [string trim $newtext]
-
-	# Twitter has a 140 character limit
-	# [ 02:46:33 pm | 240910.24 ]   [ Demon|Away ] trying to post something to my account through the api that just happens to be > 140 characters and it's not hitting my account
-	# [ 02:47:42 pm | 240910.24 ]   [ noradio ] yeah you can no longer post tweets longer than 140 characters
-	if {([len $text] > $truncate) && $complain} { return [list -1 "Tweets are limited to a total of $truncate characters. I couldn't submit your tweet. Your text would clip here: \"[mid $text [expr $truncate + 1] 40]\" <SNIP>"] }
-	if {[len $text] <= $truncate} {
-		if {([notempty query] && [isempty text])} { 
-			set q [http::formatQuery $extra $query]
-		} elseif {([isempty query] && [notempty text] && ![string eq "direct" $mode])} {
-			set q [http::formatQuery $extra $text]
-		} elseif {([string eq "direct" $mode] && [notempty text] && [notempty extra] && [notempty dmto])} {
-			set q [http::formatQuery [l0 $extra] $text [l1 $extra] $dmto]
-		} elseif {([string eq "block" $mode] && [isempty query] && [isempty text])} {
-			set q [http::formatQuery $text $query]
-		}
-		# Let's separate this, since there's an opportunity to send via a different URL tweets > 140 chars
-
-		set ::http::defaultCharset "utf-8"
-
-		if [isempty q] {
-			set error [catch { set token [::http::geturl $url -headers $headers] } shit]
-		} else {
-			set error [catch { set token [::http::geturl $url -headers $headers -query $q] } shit]
-		}
-
-		if [string eq "trends" $mode] {
-			set error [catch { set token [::http::geturl $url] } shit]
-		}
-
-		if $error {return [list -1 $shit]}; # Error code for failed send
-		set ncode [http::ncode $token]
-		set data [http::data $token]
-		set code [http::code $token]
-		::http::cleanup $token
-
-		if ![string eq 400 $ncode] {
-			if [string eq "tweet" $mode] {
-				set tweets [list [json::json2dict $data]]
-				foreach tw $tweets {
-					set id [dict get $tw id]
-					set text [dict get $tw text]
-				}
-				print $nick "Your tweet has been submitted: $text (MSG ID: $id)"
-			}
-			if [string eq "retweet" $mode] {
-				set retweets [list [json::json2dict $data]]
-				foreach rtw $retweets {
-					set id [dict get $rtw id]
-					set text [dict get $rtw text]
-				}
-				print $nick "Your retweet has been submitted: $text (MSG ID: $id)"
-			}
-			if [string eq "direct" $mode] {print $nick "Your direct message has been sent to: $dmto"}
-		}
-
-		# Process 502 Twitter Over Capacity
-		if [string eq 502 $ncode] {printh $nick "Twitter / Over capacity :: $code"; return 0}
-
-		# Process 503 Server Unavailable Errors
-		if [string eq 503 $ncode] {printh $nick "No available server to handle this request :: $code"; return 0}
-
-		return [list $ncode $data $code]
-	} else {
-		if {([notempty query] && [isempty text])} { 
-			set q [http::formatQuery $extra $query] 
-		} elseif {([isempty query] && [notempty text] && ![string eq "direct" $mode])} {
-			set old_text $text
-			set text [twitter:replacetext $text]
-
-			if {[len $text] > $truncate} {
-				printh $nick "I've shortened this to a total of [len $text] characters, yet it's still too long. Use a service like http://www.twitlonger.com to submit this tweet, or send in multiple parts."
-				printh $nick "Submitted text: $old_text"
-				printh $nick "Shortened text: $text"
-				printh $nick "Snipped at: [mid $text [expr $truncate + 1] 40]"
-
-				if [string eq "tweet" $mode] {print $nick "Your tweet could not be submitted."; return 0}
-				if [string eq "retweet" $mode] {print $nick "Your retweet could not be submitted."; return 0}
-			}
-
-			set q [http::formatQuery $extra $text]
-		} elseif {([string eq "direct" $mode] && [notempty text] && [notempty extra] && [notempty dmto])} {
-			set old_text $text
-			set text [twitter:replacetext $text]
-
-			if {[len $text] > $truncate} {
-				printh $nick "I've shortened this to a total of [len $text] characters, yet it's still too long. Use a service like http://www.twitlonger.com to submit this tweet, or send in multiple parts."
-				printh $nick "Submitted text: $old_text"
-				printh $nick "Shortened text: $text"
-				printh $nick "Snipped at: [mid $text [expr $truncate + 1] 40]"
-
-				if [string eq "direct" $mode] {print $nick "Your direct message could not be sent to: $dmto."; return 0}
-			}
-
-			set q [http::formatQuery [l0 $extra] $text [l1 $extra] $dmto]
-		}
-
-		set ::http::defaultCharset "utf-8"
-
-		if [isempty q] {
-			set error [catch { set token [::http::geturl $url -headers $headers] } shit]
-		} else {
-			set error [catch { set token [::http::geturl $url -headers $headers -query $q] } shit]
-		}
-
-		if $error {return [list -1 $shit]}; #Error code for failed send
-		set ncode [http::ncode $token]
-		set data [http::data $token]
-		set code [http::code $token]
-
-		if ![string eq 400 $ncode] {
-			if [string eq "tweet" $mode] {
-				set tweets [list [json::json2dict $data]]
-				foreach tw $tweets {
-					set id [dict get $tw id]
-					set text [dict get $tw text]
-				}
-				print $nick "Your tweet has been submitted: $text (MSG ID: $id)"
-			}
-			if [string eq "retweet" $mode] {
-				set retweets [list [json::json2dict $data]]
-				foreach rtw $retweets {
-					set id [dict get $rtw id]
-					set text [dict get $rtw text]
-				}
-				print $nick "Your retweet has been submitted: $text (MSG ID: $id)"
-			}
-			if [string eq "direct" $mode] {print $nick "Your direct message has been sent to: $dmto"}
-		}
-
-		# Process 502 Twitter Over Capacity
-		if [string eq 502 $ncode] {printh $nick "Twitter / Over capacity :: $code"; return 0}
-
-		# Process 503 Server Unavailable Errors
-		if [string eq 503 $ncode] {printh $nick "No available server to handle this request :: $code"; return 0}
-
-		::http::cleanup $token
-		return [list $ncode $data $code]
-	}
-	return 0; # Error code for OK.
+	return [string trim $newtext]
 }
 
+# Shorten words to reduce text length
 proc twitter:replacetext text {
 	# Start a list of words to be shortened
 	array set list ""
@@ -1418,7 +1273,7 @@ proc twitter:shorten {handle url type} {
 
 	switch -- $type {
 		0 {set query "http://is.gd/api.php?[http::formatQuery longurl $url]"}
-#		1 {set query "http://moourl.com/create/?[http::formatQuery source $url]"}
+		1 {#set query "http://moourl.com/create/?[http::formatQuery source $url]"}
 		2 {set query "http://api.bit.ly/v3/shorten?[http::formatQuery login [getdata $handle BITLY-USERNAME] apiKey [getdata $handle BITLY-APIKEY] longUrl $url format txt]"}
 		3 {set query "http://cli.gs/api/v1/cligs/create?[http::formatQuery url $url]&title=&key=&appid=StormbotTCL"}
 	}
