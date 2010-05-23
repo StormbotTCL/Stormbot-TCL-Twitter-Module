@@ -16,6 +16,10 @@ You can always get the latest source from <http://github.com/demonicpagan/Stormb
 
 Changelog - Dates are in Epoch time
 -----------------------------------
+1274652765
+
+*	Went from Basic Authentication to OAuth Authentication
+
 1273180216:
 
 *	Created a README for GitHub and brought this repository online.
