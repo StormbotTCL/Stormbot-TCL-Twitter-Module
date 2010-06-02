@@ -823,7 +823,7 @@ proc SB:proc_twitter {nick host handle chan arg} {
 			if [isempty twfreply] { set twfreply 1 }
 
 			# Use twitter:senddata process
-			if {[catch {twitter:senddata $handle $nick $twitter::home_url [list since_reply $twfreply count 20]} result]} {
+			if {[catch {twitter:senddata $handle $nick $twitter::home_url [list since_reply $twfreply count 10]} result]} {
 				print $nick "Retrieval error. ($result)"
 				return 0
 			}
