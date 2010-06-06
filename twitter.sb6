@@ -227,7 +227,7 @@ proc SB:proc_twitter {nick host handle chan arg} {
 		printh $nick "It is best to when using this command, place your bot in its own channel."
 		printh $nick ""
 		if [string eq ALL $u2] {
-			if [SB:checklevel [sbd:get USERLEVEL:BOTOWNER] $handle] {
+			if [SB:checkaccess [sbd:get USERLEVEL:BOTOWNER] $handle] {
 				printh $nick "\002 Storing your Twitter credentials/Locking Channel\002"
 				printh $nick "/msg $::botnick TWITTER SETKEY <consumer key>"
 				printh $nick "/msg $::botnick TWITTER SETSECRET <consumer secret>"
