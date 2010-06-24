@@ -43,6 +43,7 @@ namespace eval oauth {
 	variable authorize_url https://api.twitter.com/oauth/authorize
 	variable access_token_url http://api.twitter.com/oauth/access_token
 
+	# timeout for http requests (ms)
 	variable timeout 60000
 }
 
@@ -153,7 +154,7 @@ proc oauth:params_signature {params} {
 # token_secret may be empty
 proc oauth:signature {url method params {token_secret {}}} {
 	# We want base URL for signing (remove ?params=...)
-	set url [l0 [split $url "?"]]
+	set url [lindex [split $url "?"] 0]
 	set base_string [oauth:uri_escape ${method}]&[oauth:uri_escape ${url}]&[oauth:uri_escape [oauth:params_signature $params]]
 	set key [oauth:uri_escape $oauth::consumer_secret]&[oauth:uri_escape $token_secret]
 	set signature [sha1::hmac -bin -key $key $base_string]
@@ -251,7 +252,7 @@ proc SB:proc_twitter {nick host handle chan arg} {
 				printh $nick "Syntax: $::botnick TWITTER DELETE <msg id #> (Delete a tweet YOU sent)"
 				printh $nick "Syntax: $::botnick TWITTER FOLLOW <screen name> (Follow a twitter user - Can only be used in Twitter channel)"
 				printh $nick "Syntax: $::botnick TWITTER UNFOLLOW <screen name> (Unfollow a twitter user)"
-				printh $nick "Syntax: $::botnick TWITTER FRIENDS (Displays your public timeline that includes your friends' tweets - at most 10 results)"
+				printh $nick "Syntax: $::botnick TWITTER FRIENDS (Displays your public timeline that includes your friends' tweets - at most 20 results)"
 				printh $nick "Syntax: $::botnick TWITTER MENTIONS (Displays messages directed at you.)"
 				printh $nick "Syntax: $::botnick TWITTER RETWEET <id> (Retweet a message that you found interesting)"
 				printh $nick "Syntax: $::botnick TWITTER DIRECT SEND <name> <msg> (Send a direct message to a user - 140 Char limit)"
@@ -822,7 +823,7 @@ proc SB:proc_twitter {nick host handle chan arg} {
 			if [isempty twfreply] { set twfreply 1 }
 
 			# Use twitter:senddata process
-			if {[catch {twitter:senddata $handle $nick $twitter::home_url [list since_reply $twfreply count 10]} result]} {
+			if {[catch {twitter:senddata $handle $nick $twitter::home_url [list since_reply $twfreply count 10] GET} result]} {
 				print $nick "Retrieval error. ($result)"
 				return 0
 			}
@@ -1166,9 +1167,24 @@ proc twitter:senddata { handle nick url {query_list {}} {http_method {}} } {
 		return 0
 	}
 
+	# workaround as twitter expects ?param=value as part of URL for GET queries
+	# that have params!
+	if {[string eq "GET" $method] && [notempty query_list]} {
+		set url ${url}[twitter:url_params $query_list]
+	}
+
 	set data [oauth:query_api $url $method $oauth_token $oauth_token_secret $query_list]
 
 	return [json::json2dict $data]
+}
+
+# return ?param1=value1&param2=value2... from key = param name dict
+proc twitter:url_params {params_dict} {
+	set str "?"
+	foreach key [dict keys $params_dict] {
+		set str ${str}${key}=[http::formatQuery [dict get $params_dict $key]]&
+	}
+	return [string trimright $str &]
 }
 
 # Work with URL shorteners
