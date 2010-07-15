@@ -23,7 +23,7 @@
 
 SB:command add TWITTER 1 -none TW
 SB:register variable global TWITTER:*
-sbdset SB:author "Dustin Shea (demonicpagan@gmail.com)"
+sbd:set twitter:author "Dustin Shea (demonicpagan@gmail.com)"
 
 # Make sure the require packages are installed
 empty package_failed
