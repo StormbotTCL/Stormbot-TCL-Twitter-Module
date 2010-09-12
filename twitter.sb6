@@ -208,6 +208,8 @@ namespace eval twitter {
 	variable block_chk_url "http://api.twitter.com/1/blocks/exists.json" ; # GET exists.json?screen_name=noradio
 	variable block_list_url "http://api.twitter.com/1/blocks/blocking.json" ; # GET
 	variable fav_list_url "http://api.twitter.com/1/favorites.json" ; # GET
+	variable fav_add_url "http://api.twitter.com/1/favorites/create/" ; # POST id.json where id is the message id
+	variable fav_del_url "http://api.twitter.com/1/favorites/destroy/" ; # POST id.json where id is the message id
 	variable retweet_url "http://api.twitter.com/1/statuses/retweet/" ; # POST id.json where id is the message id
 }
 
@@ -264,6 +266,8 @@ proc SB:proc_twitter {nick host handle chan arg} {
 				printh $nick "Syntax: $::botnick TWITTER BLOCK LIST (List your blocked people)"
 				printh $nick "Syntax: $::botnick TWITTER TRENDS (Displays the current top 10 trending topics with the search URL)"
 				printh $nick "Syntax: $::botnick TWITTER FAVORITES (Displays your favorited tweets)"
+				printh $nick "Syntax: $::botnick TWITTER FAVORITES ADD <msg id #> (Add a tweet to your favorites)"
+				printh $nick "Syntax: $::botnick TWITTER FAVORITES DEL <msg id #> (Remove a tweet from your favorites)"
 				printh $nick "Syntax: $::botnick TWITTER PROFILE VIEW <screen name> (View a users profile)"
 				printh $nick "Syntax: $::botnick TWITTER SEARCH <screen name> (Search for a profile - returns the first 5 results)"
 		} else {
@@ -1041,51 +1045,99 @@ proc SB:proc_twitter {nick host handle chan arg} {
 		}
 
 		fav - favorite - favorites {
-			# View your favoirted tweets
-			# BOT twitter (or tw) favorites
-			set twhome [sbdget TWITTER:HOME]
-			if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
-			if {[stl $chan] != [stl $twhome]} {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
+			switch -glob -- $l2 {
+				+ - add {
+					# Add a tweet to your favorites
+					# BOT twitter (or tw) favorites add
+					set twhome [sbdget TWITTER:HOME]
+					if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
+					if {[stl $chan] != [stl $twhome]} {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
 
-			# Use twitter:senddata process
-			if {[catch {twitter:senddata $handle $nick $twitter::fav_list_url} result]} {
-				print $nick "Unable to retrieve your favorites list."
-				return 0
-			}
-
-			set fav [lreverse $result]
-			set x 0
-
-			foreach f $fav {
-				set user [dict get $f user]
-				set uname [dict get $user screen_name]
-				set name [dict get $user name]
-
-				set source [dict get $f source]
-				regexp -nocase -- {<a.+?>(.+?)</a>} $source all source
-
-				set date [formattime [twitter:converttime [dict get $f created_at]] $handle]
-
-				set text [twitter:convert-unicode [SB:convert_html_codes [dict get $f text]]]
-				# Replace utf-8 entities that aren't covered by SB:convert_html_codes
-				foreach {a b} [list \u2014 -- \u2019 ' \u2018 ' &#8212\\\; -- \u2013 -] {regsub -all $a $text $b text}
-
-				if {[getdata $handle TWNAME] == $uname} {
-					if {[sbdget TWITTER:DISP]} {
-						print $nick "[incr x]. [color 13]$uname ($name): $text (Posted: $date) via $source[color]"
-					} else {
-						print $nick "[incr x]. [color 13]$uname: $text (Posted: $date) via $source[color]"
+					# Use twitter:senddata process
+					if {[catch {twitter:senddata $handle $nick "${twitter::fav_add_url}${3}.json" {} POST} result]} {
+						print $nick "That tweet ID is already favorited!"
+						return 0
 					}
-				} else {
-					if {[sbdget TWITTER:DISP]} {
-						print $nick "[incr x]. $uname ($name): $text (Posted: $date) via $source"
-					} else {
-						print $nick "[incr x]. $uname: $text (Posted: $date) via $source"
+
+					set fav [list $result]
+					foreach param $fav {
+						set text [dict get $param text]
 					}
+					print $nick "The tweet \002$text\002 has been added to your favorites."
+					return 0
+				}
+
+				"-" - del* {
+					# Delete a favorited tweet
+					# BOT twitter (or tw) favorites del
+					set twhome [sbdget TWITTER:HOME]
+					if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
+					if {[stl $chan] != [stl $twhome]} {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
+
+					# Use twitter:senddata process
+					if {[catch {twitter:senddata $handle $nick "${twitter::fav_del_url}${3}.json" {} POST} result]} {
+						print $nick "Tweet ID doesn't exist in your favorites!"
+						return 0
+					}
+
+					set fav [list $result]
+					foreach param $fav {
+						set text [dict get $param text]
+						set id [dict get $param id]
+					}
+					print $nick "The tweet \002$text\002 has been removed from your favorites (MSG ID: $id)."
+					return 0
+				}
+
+				default {
+					# View your favoirted tweets
+					# BOT twitter (or tw) favorites
+					set twhome [sbdget TWITTER:HOME]
+					if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
+					if {[stl $chan] != [stl $twhome]} {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
+
+					# Use twitter:senddata process
+					if {[catch {twitter:senddata $handle $nick $twitter::fav_list_url} result]} {
+						print $nick "Unable to retrieve your favorites list."
+						return 0
+					}
+
+					set fav [lreverse $result]
+					set x 0
+
+					foreach f $fav {
+						set user [dict get $f user]
+						set uname [dict get $user screen_name]
+						set name [dict get $user name]
+						set id [dict get $f id]
+
+						set source [dict get $f source]
+						regexp -nocase -- {<a.+?>(.+?)</a>} $source all source
+
+						set date [formattime [twitter:converttime [dict get $f created_at]] $handle]
+
+						set text [twitter:convert-unicode [SB:convert_html_codes [dict get $f text]]]
+						# Replace utf-8 entities that aren't covered by SB:convert_html_codes
+						foreach {a b} [list \u2014 -- \u2019 ' \u2018 ' &#8212\\\; -- \u2013 -] {regsub -all $a $text $b text}
+
+						if {[getdata $handle TWNAME] == $uname} {
+							if {[sbdget TWITTER:DISP]} {
+								print $nick "[incr x]. [color 13]$uname ($name): $text (Posted: $date) via $source[color] (MSG ID: $id)"
+							} else {
+								print $nick "[incr x]. [color 13]$uname: $text (Posted: $date) via $source[color] (MSG ID: $id)"
+							}
+						} else {
+							if {[sbdget TWITTER:DISP]} {
+								print $nick "[incr x]. $uname ($name): $text (Posted: $date) via $source (MSG ID: $id)"
+							} else {
+								print $nick "[incr x]. $uname: $text (Posted: $date) via $source (MSG ID: $id)"
+							}
+						}
+					}
+					print $nick ">End Favorites"
+					return 0
 				}
 			}
-			print $nick ">End Favorites"
-			return 0
 		}
 
 		"-" - del* {

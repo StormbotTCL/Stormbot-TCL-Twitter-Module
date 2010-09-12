@@ -16,6 +16,11 @@ You can always get the latest source from <http://github.com/demonicpagan/Stormb
 
 Changelog - Dates are in Epoch time
 -----------------------------------
+1284329312
+
+*	Added the ability to add and remove tweets to your favorites.
+*	Set the default syntax of BOT Twitter Favorites to list your twitter favorites.
+
 1274798544
 
 *	Redone the help to make it clearer between the difference of SHORTENER and 
