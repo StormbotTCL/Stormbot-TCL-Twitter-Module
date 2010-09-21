@@ -16,6 +16,10 @@ You can always get the latest source from <http://github.com/demonicpagan/Stormb
 
 Changelog - Dates are in Epoch time
 -----------------------------------
+1285052087
+
+*	Fixed an error when trying to call the mentions timeline. Parameter needed to pass the GET parameter.
+
 1284329312
 
 *	Added the ability to add and remove tweets to your favorites.

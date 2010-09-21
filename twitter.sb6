@@ -879,7 +879,7 @@ proc SB:proc_twitter {nick host handle chan arg} {
 			if [isempty twreply] { set twreply 1 }
 
 			# Use twitter:senddata process
-			if {[catch {twitter:senddata $handle $nick $twitter::ment_url [list since_id $twreply]} result]} {
+			if {[catch {twitter:senddata $handle $nick $twitter::ment_url [list since_id $twreply include_rts true] GET} result]} {
 				print $nick "Unable to retrieve your mentions time line."
 				return 0
 			}
