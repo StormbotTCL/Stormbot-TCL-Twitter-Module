@@ -248,6 +248,7 @@ proc SB:proc_twitter {nick host handle chan arg} {
 				printh $nick "Syntax: $::botnick TWITTER UNFOLLOW <screen name> (Unfollow a twitter user)"
 				printh $nick "Syntax: $::botnick TWITTER FRIENDS (Displays your public timeline that includes your friends' tweets - at most 20 results)"
 				printh $nick "Syntax: $::botnick TWITTER MENTIONS (Displays messages directed at you.)"
+				printh $nick "Syntax: $::botnick TWITTER MENTIONS CLEAR (Reset your mentions timeline so you can view again if you hadn't been mentioned since last viewing.)"
 				printh $nick "Syntax: $::botnick TWITTER RETWEET <id> (Retweet a message that you found interesting)"
 				printh $nick "Syntax: $::botnick TWITTER DIRECT SEND <name> <msg> (Send a direct message to a user - 140 Char limit)"
 				printh $nick "Syntax: $::botnick TWITTER DIRECT LIST (lists your direct messages and their id number)"
