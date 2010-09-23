@@ -1451,8 +1451,8 @@ proc twitter:shorten {url type} {
 		default {
 			set token [http::geturl $query -timeout 10000]
 			upvar #0 $token state
-			if [instr $state(body) [space]] {return [regsub -all -- \n $state(body) ""]}
-
+			#if [instr $state(body) [space]] {return [regsub -all -- \n $state(body) ""]}
+			return [regsub -all -- \n $state(body) ""]
 		}
 	}
 
