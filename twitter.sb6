@@ -262,6 +262,7 @@ proc SB:proc_twitter {nick host handle chan arg} {
 				printh $nick "Syntax: $::botnick TWITTER FAVORITES ADD <msg id #> (Add a tweet to your favorites)"
 				printh $nick "Syntax: $::botnick TWITTER FAVORITES DEL <msg id #> (Remove a tweet from your favorites)"
 				printh $nick "Syntax: $::botnick TWITTER PROFILE VIEW <screen name> (View a users profile)"
+				printh $nick "Syntax: $::botnick TWITTER PROFILE SET <NAME|URL|LOCATION|DESCRIPTION> <attrib> (Set various profile attributes)"
 				printh $nick "Syntax: $::botnick TWITTER SEARCH <screen name> (Search for a profile - returns the first 5 results)"
 				printh $nick "Syntax: $::botnick TWITTER STATUS SHOW <msg id #> (Show a particular status update)"
 				printh $nick "Syntax: $::botnick TWITTER STATUS DELETE <msg id #> (Delete a tweet YOU sent)"
