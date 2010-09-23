@@ -1,22 +1,6 @@
 # Twitter Client through SB6
 #
-# Using BOT twitter (or tw) <msg> to send a tweet
-# Retweet: BOT twitter (or tw) retweet (or rt) <name> <msg> to retweet a message
-# Direct Message: BOT twitter (or tw) dm <name> <msg> to direct message one of your followers
-# Friends: BOT twitter (or tw) friends to retrieve a friend's timeline
-# Replies: BOT twitter (or tw) replies to retrieve your replies (@yourname) timeline
-# Follow: BOT twitter (or tw) follow <name> to follow a user
-# Unfollow: BOT twitter (or tw) unfollow <name> to unfollow a user
-#
 # It is required to place your bot in a channel dedicated to twitter as to not disrupt another channel's chatter
-#
-# TODO:
-#   * Store twitter username and password to bot user data file via /msg bot ONLY (security reasons) (DONE - Thanks Mai!)
-#   * Work on handling the different retrieval methods (DONE)
-#   * Write the help on the commands (DONE)
-#   * Better handle (re)tweets and direct messages greater than 140 characters (DONE)
-#   * Implement oAuth. (DONE)
-#   * Implement URL shorteners of is.gd, moourl.com, bit.ly, or cli.gs (DONE)
 #
 # Change Log:
 # Please refer to http://github.com/demonicpagan/Stormbot-TCL-Twitter-Module for changes made
