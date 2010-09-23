@@ -121,7 +121,7 @@ proc oauth:query {url method oauth_header {query {}}} {
 	set header [list Authorization [concat "OAuth" $oauth_header]]
 	set token [http::geturl $url -headers $header -query $query -method $method -timeout $oauth::timeout]
 	set data [http::data $token]
-msghome DATA($data)
+#msghome DATA($data)
 	set ncode [http::ncode $token]
 	http::cleanup $token
 
