@@ -280,6 +280,7 @@ proc SB:proc_twitter {nick host handle chan arg} {
 				printh $nick "Syntax: $::botnick TWITTER SEARCH <screen name> (Search for a profile - returns the first 5 results)"
 				printh $nick "Syntax: $::botnick TWITTER STATUS SHOW <msg id #> (Show a particular status update)"
 				printh $nick "Syntax: $::botnick TWITTER STATUS DELETE <msg id #> (Delete a tweet YOU sent)"
+				printh $nick "Syntax: $::botnick TWITTER STATUS REPLY <msg id #> <msg> (Link a tweet to a specific status ID)"
 		} else {
 			printh $nick "To see all available options, use: $::botnick TWITTER HELP ALL"
 		}
@@ -1187,6 +1188,40 @@ proc SB:proc_twitter {nick host handle chan arg} {
 						set text [dict get $a text]
 						set id [dict get $a id]
 						print $nick "Deleted tweet: \"$text\" (MSG ID: $id)"
+					}
+					return 0
+				}
+
+				rep* {
+					# Reply to a specific status ID
+					# BOT twitter status reply <msg id>
+					set twhome [sbdget TWITTER:HOME]
+					if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
+					if {[stl $chan] != [stl $twhome]} {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
+
+					# Use twitter:senddata process
+					if {[catch {twitter:senddata $handle $nick $twitter::status_url [list in_reply_to_status_id $3 status [twitter:urlshorten [twitter:replacetext $j4e]]]} result]} {
+						print $nick "Error: Unable to post tweet."
+						return 0
+					} elseif {[len $j4e] > 140} {
+						set old_text $j1e
+						set truncate 140
+						set text [twitter:urlshorten [twitter:replacetext $j4e]]
+
+						print $nick "I've shortened this to a total of [len $text] characters, yet it's still too long. Use a service like http://www.twitlonger.com to submit this tweet, or send in multiple parts."
+						print $nick "Submitted text: $old_text"
+						print $nick "Shortened text: $text"
+						print $nick "Snipped at: [mid $text [expr $truncate + 1] 40]"
+						print $nick "Your tweet could not be submitted."
+						return 0
+					} else {
+						set tweets [list $result]
+						foreach tw $tweets {
+							set id [dict get $tw id]
+							set text [dict get $tw text]
+						}
+						print $nick "Your tweet has been submitted: $text (MSG ID: $id)"
+						return 0
 					}
 					return 0
 				}

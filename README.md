@@ -16,6 +16,10 @@ You can always get the latest source from <http://github.com/demonicpagan/Stormb
 
 Changelog - Dates are in Epoch time
 -----------------------------------
+1285244867
+
+*	Added the ability to link a tweet to a specific status ID so you can chain tweets to form a conversation. Use `BOT TWITTER STATUS REPLY <msg id #> <msg text>`
+
 1285223866
 
 *	Added the ability to show certain status messages by their ID. Result give you who sent, status, source, date/time, and reply-to id so
