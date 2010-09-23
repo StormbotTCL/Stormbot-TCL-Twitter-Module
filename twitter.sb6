@@ -25,6 +25,13 @@ SB:command add TWITTER 1 -none TW
 SB:register variable global TWITTER:*
 sbd:set twitter:author "Dustin Shea (demonicpagan@gmail.com)"
 
+# Make sure your running at least TCL 8.5
+if [string match -nocase 8.4.* [info patchlevel]] {
+	print $nick "You are running TCL v${::tcl_patchLevel}. It's recommended to upgrade to version 8.5, however you can try compiling the DICT package for 8.4 found here, http://pascal.scheffers.net/software/tclDict-8.5.2.tar.gz"
+	print $nick "I can't guarantee that after compiling that DICT package that this bead will work properly. If it doesn't, I'd suggest upgrading your TCL version."
+	return 0
+}
+
 # Make sure the require packages are installed
 empty package_failed
 foreach package [list base64 json http sha1] {
@@ -114,6 +121,7 @@ proc oauth:query {url method oauth_header {query {}}} {
 	set header [list Authorization [concat "OAuth" $oauth_header]]
 	set token [http::geturl $url -headers $header -query $query -method $method -timeout $oauth::timeout]
 	set data [http::data $token]
+msghome DATA($data)
 	set ncode [http::ncode $token]
 	http::cleanup $token
 
@@ -211,6 +219,7 @@ namespace eval twitter {
 	variable fav_add_url "http://api.twitter.com/1/favorites/create/" ; # POST id.json where id is the message id
 	variable fav_del_url "http://api.twitter.com/1/favorites/destroy/" ; # POST id.json where id is the message id
 	variable retweet_url "http://api.twitter.com/1/statuses/retweet/" ; # POST id.json where id is the message id
+	variable status_show_url "http://api.twitter.com/1/statuses/show.json" ; # GET id.json where id is the message id
 }
 
 proc SB:proc_twitter {nick host handle chan arg} {
@@ -251,7 +260,6 @@ proc SB:proc_twitter {nick host handle chan arg} {
 				printh $nick "Syntax: $::botnick TWITTER REQTOKEN (Request your oAuth token)"
 				printh $nick "Syntax: $::botnick TWITTER ACCTOKEN <oauth token> <oauth token secret> <PIN from authentication url of $::botnick TWITTER REQTOKEN> (Use your token)"
 				printh $nick "Syntax: $::botnick TWITTER <message text> (Send a status update to twitter - 140 Char limit)"
-				printh $nick "Syntax: $::botnick TWITTER DELETE <msg id #> (Delete a tweet YOU sent)"
 				printh $nick "Syntax: $::botnick TWITTER FOLLOW <screen name> (Follow a twitter user - Can only be used in Twitter channel)"
 				printh $nick "Syntax: $::botnick TWITTER UNFOLLOW <screen name> (Unfollow a twitter user)"
 				printh $nick "Syntax: $::botnick TWITTER FRIENDS (Displays your public timeline that includes your friends' tweets - at most 20 results)"
@@ -270,6 +278,8 @@ proc SB:proc_twitter {nick host handle chan arg} {
 				printh $nick "Syntax: $::botnick TWITTER FAVORITES DEL <msg id #> (Remove a tweet from your favorites)"
 				printh $nick "Syntax: $::botnick TWITTER PROFILE VIEW <screen name> (View a users profile)"
 				printh $nick "Syntax: $::botnick TWITTER SEARCH <screen name> (Search for a profile - returns the first 5 results)"
+				printh $nick "Syntax: $::botnick TWITTER STATUS SHOW <msg id #> (Show a particular status update)"
+				printh $nick "Syntax: $::botnick TWITTER STATUS DELETE <msg id #> (Delete a tweet YOU sent)"
 		} else {
 			printh $nick "To see all available options, use: $::botnick TWITTER HELP ALL"
 		}
@@ -357,7 +367,7 @@ proc SB:proc_twitter {nick host handle chan arg} {
 			return 0
 		}
 
-		rate - ratelimit - stat - stats - status {
+		rate - ratelimit {
 			set twhome [sbdget TWITTER:HOME]
 			if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
 			if {[stl $chan] != [stl $twhome]} {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
@@ -870,47 +880,63 @@ proc SB:proc_twitter {nick host handle chan arg} {
 		}
 
 		rp - rpy - reply - men - mentions - replies { # Reply/Mentions code optimized for performance by Mai, thanks :)
-			# Replies: BOT twitter (or tw) replies to retrieve your replies (@yourname) timeline
-			set twhome [sbdget TWITTER:HOME]
-			if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
-			if {[stl $chan] != [stl $twhome]} {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
-
-			set twreply [getdata $handle since_replies]
-			if [isempty twreply] { set twreply 1 }
-
-			# Use twitter:senddata process
-			if {[catch {twitter:senddata $handle $nick $twitter::ment_url [list since_id $twreply include_rts true] GET} result]} {
-				print $nick "Unable to retrieve your mentions time line."
-				return 0
-			}
-
-			set replies [lreverse $result]
-
-			foreach reply $replies {
-				set id [dict get $reply id]
-				set user [dict get $reply user]
-				set uname [dict get $user screen_name]
-				set name [dict get $user name]
-
-				set source [dict get $reply source]
-				regexp -all -nocase -- {<a.+?>(.+?)</a>} $source all source
-
-				set date [formattime [twitter:converttime [dict get $reply created_at]] $handle]
-
-				set text [twitter:convert-unicode [SB:convert_html_codes [dict get $reply text]]]
-				# Replace utf-8 entities that aren't covered by SB:convert_html_codes
-				foreach {a b} [list \u2014 -- \u2019 ' \u2018 ' &#8212\\\; -- \u2013 -] {regsub -all $a $text $b text}
-
-				if {[sbdget TWITTER:DISP]} {
-					print $nick "\002$uname ($name)\002: $text (Posted: $date) via $source (MSG ID: $id)"
-				} else {
-					print $nick "\002$uname\002: $text (Posted: $date) via $source (MSG ID: $id)"
+			switch -glob -- $l2 {
+				clear {
+					if {[stl $3] != "clear"} {printh $nick "Are you \002\037SURE\037\002?! Use \"CLEAR CLEAR\" to convince me."; return 0}
+					set twreply 1
+					setdata $handle since_replies $twreply
+					save
+					print $nick "I have reset your mentions list. It will return the 20 most recent results."
+					return 0
 				}
 
-				setdata $handle since_replies $id
+				default {
+					# Replies: BOT twitter (or tw) replies to retrieve your replies (@yourname) timeline
+					set twhome [sbdget TWITTER:HOME]
+					if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
+					if {[stl $chan] != [stl $twhome]} {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
+
+					set twreply [getdata $handle since_replies]
+					if [isempty twreply] { set twreply 1 }
+
+					# Use twitter:senddata process
+					if {[catch {twitter:senddata $handle $nick $twitter::ment_url [list since_id $twreply include_rts true] GET} result]} {
+						print $nick "Unable to retrieve your mentions time line."
+						return 0
+					}
+
+					if [isempty result] {print $nick "You have no recent mentions. You have already viewed your most recent ones. Use $::botnick TWITTER MENTIONS CLEAR CLEAR to reset and view again."; return 0}
+
+					set replies [lreverse $result]
+					set x 0
+
+					foreach reply $replies {
+						set id [dict get $reply id]
+						set user [dict get $reply user]
+						set uname [dict get $user screen_name]
+						set name [dict get $user name]
+
+						set source [dict get $reply source]
+						regexp -all -nocase -- {<a.+?>(.+?)</a>} $source all source
+
+						set date [formattime [twitter:converttime [dict get $reply created_at]] $handle]
+
+						set text [twitter:convert-unicode [SB:convert_html_codes [dict get $reply text]]]
+						# Replace utf-8 entities that aren't covered by SB:convert_html_codes
+						foreach {a b} [list \u2014 -- \u2019 ' \u2018 ' &#8212\\\; -- \u2013 -] {regsub -all $a $text $b text}
+
+						if {[sbdget TWITTER:DISP]} {
+							print $nick "[incr x]. \002$uname ($name)\002: $text (Posted: $date) via $source (MSG ID: $id)"
+						} else {
+							print $nick "[incr x]. \002$uname\002: $text (Posted: $date) via $source (MSG ID: $id)"
+						}
+
+						setdata $handle since_replies $id
+					}
+					save
+					return 0
+				}
 			}
-			save
-			return 0
 		}
 
 		folow - follow {
@@ -1140,27 +1166,81 @@ proc SB:proc_twitter {nick host handle chan arg} {
 			}
 		}
 
-		"-" - del* {
-			# Delete a tweet you've sent
-			# BOT twitter delete <msg id>
-			set twhome [sbdget TWITTER:HOME]
-			if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
-			if {[stl $chan] != [stl $twhome]} {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
+		stat - stats - status {
+			switch -glob -- $l2 {
+				"-" - del* {
+					# Delete a tweet you've sent
+					# BOT twitter status delete <msg id>
+					set twhome [sbdget TWITTER:HOME]
+					if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
+					if {[stl $chan] != [stl $twhome]} {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
 
-			# Use twitter:senddata process
-			if {[catch {twitter:senddata $handle $nick $twitter::status_del_url [list id $2]} result]} {
-				print $nick "Unable to delete tweet (does it exist?)"
-				return 0
-			}
+					# Use twitter:senddata process
+					if {[catch {twitter:senddata $handle $nick $twitter::status_del_url [list id $3]} result]} {
+						print $nick "Unable to delete tweet (does it exist?)"
+						return 0
+					}
 
-			# Retrieve tweet for deletion
-			set tweet [list $result]
-			foreach a $tweet {
-				set text [dict get $a text]
-				set id [dict get $a id]
-				print $nick "Deleted tweet: \"$text\" (MSG ID: $id)"
+					# Retrieve tweet for deletion
+					set tweet [list $result]
+					foreach a $tweet {
+						set text [dict get $a text]
+						set id [dict get $a id]
+						print $nick "Deleted tweet: \"$text\" (MSG ID: $id)"
+					}
+					return 0
+				}
+
+				show - disp* {
+					# Display a certain status id
+					# BOT twitter status show <msg id>
+					set twhome [sbdget TWITTER:HOME]
+					if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
+					if {[stl $chan] != [stl $twhome]} {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
+
+					# Use twitter:senddata process
+					if {[catch {twitter:senddata $handle $nick $twitter::status_show_url [list id $3] GET} result]} {
+						print $nick "Unable to find tweet id $3 (does it exist?)"
+						return 0
+					}
+
+					# Retrieve tweet information
+					set tweet [list $result]
+
+					foreach tw $tweet {
+						set id [dict get $tw id]
+						set rpltoid [dict get $tw in_reply_to_status_id]
+
+						set user [dict get $tw user]
+						set uname [dict get $user screen_name]
+						set name [dict get $user name]
+
+						set date [formattime [twitter:converttime [dict get $tw created_at]] $handle]
+
+						set text [twitter:convert-unicode [SB:convert_html_codes [dict get $tw text]]]
+						# Replace utf-8 entities that aren't covered by SB:convert_html_codes
+						foreach {a b} [list \u2014 -- \u2019 ' \u2018 ' &#8212\\\; -- \u2013 -] {regsub -all $a $text $b text}
+
+						set source [dict get $tw source]
+						regexp -nocase -- {<a.+?>(.+?)</a>} $source all source
+
+						if {[getdata $handle TWNAME] == $uname} {
+							if {[sbdget TWITTER:DISP]} {
+								print $nick "[color 13]$uname ($name): $text (Posted: $date) via $source[color] (MSG ID: $id) (REPLY-TO ID: $rpltoid)"
+							} else {
+								print $nick "[color 13]$uname: $text (Posted: $date) via $source[color] (MSG ID: $id) (REPLY-TO ID: $rpltoid)"
+							}
+						} else {
+							if {[sbdget TWITTER:DISP]} {
+								print $nick "$uname ($name): $text (Posted: $date) via $source (MSG ID: $id) (REPLY-TO ID: $rpltoid)"
+							} else {
+								print $nick "$uname: $text (Posted: $date) via $source (MSG ID: $id) (REPLY-TO ID: $rpltoid)"
+							}
+						}
+					}
+					return 0
+				}
 			}
-			return 0
 		}
 
 		default {

@@ -16,6 +16,19 @@ You can always get the latest source from <http://github.com/demonicpagan/Stormb
 
 Changelog - Dates are in Epoch time
 -----------------------------------
+1285223866
+
+*	Added the ability to show certain status messages by their ID. Result give you who sent, status, source, date/time, and reply-to id so
+you can trace back the conversation.
+*	Add the ability to reset your mentions timeline so you can review them. Originally, once you viewed them once, you couldn't go back and review 
+them again, only view most recent ones.
+*	Created a wiki to explain how to set your bot up with Twitter. <http://github.com/demonicpagan/Stormbot-TCL-Twitter-Module/wiki>
+*	Performed a check to see that you are running at least TCL version 8.5, gives suggestions of what to do if you aren't.
+
+TODO:
+*	Try and get the show option to track back an entire conversation until it reaches a null in_reply_to_status_id. If the in_reply_to_status_id 
+is already null after looking up just one status id, just display that one status id.
+
 1285052087
 
 *	Fixed an error when trying to call the mentions timeline. Parameter needed to pass the GET parameter.
