@@ -869,7 +869,7 @@ proc SB:proc_twitter {nick host handle chan arg} {
 			return 0
 		}
 
-		rp - rpy - reply - men - mentions - replies { # Reply/Mentions code optimized for performance by Mai, thanks :)
+		rp - rpy - reply - men\[t?\] - mentions - replies { # Reply/Mentions code optimized for performance by Mai, thanks :)
 			switch -glob -- $l2 {
 				clear {
 					if {[stl $3] != "clear"} {printh $nick "Are you \002\037SURE\037\002?! Use \"CLEAR CLEAR\" to convince me."; return 0}
