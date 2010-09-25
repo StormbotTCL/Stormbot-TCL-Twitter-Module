@@ -98,7 +98,7 @@ proc oauth:query {url method oauth_header {query {}}} {
 	set header [list Authorization [concat "OAuth" $oauth_header]]
 	set token [http::geturl $url -headers $header -query $query -method $method -timeout $oauth::timeout]
 	set data [http::data $token]
-msghome DATA($data)
+#msghome DATA($data)
 	set ncode [http::ncode $token]
 	http::cleanup $token
 
@@ -204,20 +204,20 @@ proc SB:proc_twitter {nick host handle chan arg} {
 	SB:setvariables
 
 	set disp [sbdget TWITTER:DISP]
-     if [isempty disp] {zero disp}
+	if [isempty disp] {zero disp}
 
 	# Set $DCCOKAY to 0 (only allow /MSG commands), or 1 (/MSG & .DCC are okay).
-     zero dccokay
+	zero dccokay
 
-     # Make sure your running at least TCL 8.5
-     if {$::tcl_version < 8.5} {
-          set error [ catch { package require dict } null]
-          if $error {
-               print $nick "\[TWITTER WARNING\] You are running TCL v${::tcl_patchLevel}. It's recommended to upgrade to version 8.5."
-               if [string eq 8.4 $::tcl_version] {print $nick "\[TWITTER WARNING\] However, you can try compiling the DICT package for 8.4 found here, http://pascal.scheffers.net/software/tclDict-8.5.2.tar.gz -- I can't guarantee that after compiling that DICT package that this bead will work properly. If it doesn't, I'd suggest upgrading your TCL version."}
-               return 0
-          }
-     }
+	# Make sure your running at least TCL 8.5
+	if {$::tcl_version < 8.5} {
+		set error [ catch { package require dict } null]
+		if $error {
+			print $nick "\[TWITTER WARNING\] You are running TCL v${::tcl_patchLevel}. It's recommended to upgrade to version 8.5."
+			if [string eq 8.4 $::tcl_version] {print $nick "\[TWITTER WARNING\] However, you can try compiling the DICT package for 8.4 found here, http://pascal.scheffers.net/software/tclDict-8.5.2.tar.gz -- I can't guarantee that after compiling that DICT package that this bead will work properly. If it doesn't, I'd suggest upgrading your TCL version."}
+			return 0
+		}
+	}
 
 	# Help information
 	if [string eq -nocase HELP $1] {
