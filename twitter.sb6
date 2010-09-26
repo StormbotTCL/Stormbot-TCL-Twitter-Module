@@ -1033,10 +1033,8 @@ proc SB:proc_twitter {nick host handle chan arg} {
 
 			set user $2e
 
-			set url ${twitter::search_usr_url}?[http::formatQuery q ${user} per_page 5]
-
 			# Use twitter:senddata process
-			if {[catch {twitter:senddata $handle $nick $url [list q ${user} per_page 5] GET} data]} {
+			if {[catch {twitter:senddata $handle $nick $twitter::search_usr_url [list q ${user} per_page 5] GET} data]} {
 				print $nick "Search error (${user}) - ($data)"
 				return 0
 			}
