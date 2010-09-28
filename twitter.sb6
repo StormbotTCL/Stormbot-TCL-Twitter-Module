@@ -98,7 +98,8 @@ proc oauth:query {url method oauth_header {query {}}} {
 	set header [list Authorization [concat "OAuth" $oauth_header]]
 	set token [http::geturl $url -headers $header -query $query -method $method -timeout $oauth::timeout]
 	set data [http::data $token]
-#msghome DATA($data)
+msghome DATA($data)
+dumpfile result.json $data
 	set ncode [http::ncode $token]
 	http::cleanup $token
 
@@ -197,6 +198,7 @@ namespace eval twitter {
 	variable fav_del_url "http://api.twitter.com/1/favorites/destroy/" ; # POST id.json where id is the message id
 	variable retweet_url "http://api.twitter.com/1/statuses/retweet/" ; # POST id.json where id is the message id
 	variable status_show_url "http://api.twitter.com/1/statuses/show.json" ; # GET id.json where id is the message id
+	variable search_url "http://search.twitter.com/search.json" ; # GET search.json?q=@noradio
 }
 
 proc SB:proc_twitter {nick host handle chan arg} {
@@ -266,7 +268,8 @@ proc SB:proc_twitter {nick host handle chan arg} {
 				printh $nick "Syntax: $::botnick TWITTER FAVORITES DEL <msg id #> (Remove a tweet from your favorites)"
 				printh $nick "Syntax: $::botnick TWITTER PROFILE VIEW <screen name> (View a users profile)"
 				printh $nick "Syntax: $::botnick TWITTER PROFILE SET <NAME|URL|LOCATION|DESCRIPTION> <attrib> (Set various profile attributes)"
-				printh $nick "Syntax: $::botnick TWITTER SEARCH <screen name> (Search for a profile - returns the first 5 results)"
+				printh $nick "Syntax: $::botnick TWITTER SEARCH USER <screen name> (Search for a profile - returns the first 5 results)"
+				printh $nick "Syntax: $::botnick TWITTER SEARCH TWEET <-mixed|-recent|-popular> <query> (Search for tweets, if no flag given, default is mixed)"
 				printh $nick "Syntax: $::botnick TWITTER STATUS SHOW <msg id #> (Show a particular status update)"
 				printh $nick "Syntax: $::botnick TWITTER STATUS DELETE <msg id #> (Delete a tweet YOU sent)"
 				printh $nick "Syntax: $::botnick TWITTER STATUS REPLY <msg id #> <msg> (Link a tweet to a specific status ID)"
@@ -1025,37 +1028,91 @@ proc SB:proc_twitter {nick host handle chan arg} {
 		}
 
 		su - search {
-			# Search for users on Twitter
-			# BOT twitter search <user>
-			set twhome [sbdget TWITTER:HOME]
-			if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
-			if {[stl $chan] != [stl $twhome]} {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
+			switch -exact -- $l2 {
+				user {
+					# Search for users on Twitter
+					# BOT twitter search user <user>
+					set twhome [sbdget TWITTER:HOME]
+					if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
+					if {[stl $chan] != [stl $twhome]} {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
 
-			set user $2e
+					set user $3e
 
-			# Use twitter:senddata process
-			if {[catch {twitter:senddata $handle $nick $twitter::search_usr_url [list q ${user} per_page 5] GET} data]} {
-				print $nick "Search error (${user}) - ($data)"
-				return 0
+					# Use twitter:senddata process
+					if {[catch {twitter:senddata $handle $nick $twitter::search_usr_url [list q ${user} per_page 5] GET} data]} {
+						print $nick "Search error (${user}) - ($data)"
+						return 0
+					}
+
+					set x 0
+
+					foreach u $data {
+						set name [dict get $u name]
+						set screen_name [dict get $u screen_name]
+						set location [dict get $u location]
+						set desc [dict get $u description]
+						set follow [dict get $u following]
+						set followers [dict get $u followers_count]
+						set friends [dict get $u friends_count]
+						if [dict exists $u status] {set status [dict get $u status]
+
+							set text [twitter:convert-unicode [SB:convert_html_codes [dict get $status text]]]
+							# Replace utf-8 entities that aren't covered by SB:convert_html_codes
+							foreach {a b} [list \u2014 -- \u2019 ' \u2018 ' &#8212\\\; -- \u2013 -] {regsub -all $a $text $b text}
+						} else {
+							set text null
+						}
+
+						set created [clock format [clock scan [lreplace [split [dict get $u created_at]] 4 4] -gmt true] -format "%a, %b %d, %Y @ %r %Z"]
+
+						print $nick "[incr x]. \002$name ($screen_name)\002"
+						print $nick "\002Description:\002 $desc \002Location:\002 $location \002Following:\002 $follow \002Followers:\002 $followers \002Friends:\002 $friends \002Created:\002 $created \002Latest Tweet:\002 $text"
+					}
+					print $nick ">End Search"
+					return 0
+				}
+
+				tweet {
+					# Search for tweets with contained query
+					# BOT twitter search tweet <-recent|-popular|-mixed|-source> <query>
+					set twhome [sbdget TWITTER:HOME]
+					if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
+					if {[stl $chan] != [stl $twhome]} {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
+
+					set id [getdata $handle since_search_id]
+
+					# Use twitter:senddata process
+					if [validflag -recent] {
+						if {[catch {twitter:senddata $handle $nick $twitter::search_url [list q ${4e} show_user true since_id $id result_type recent] GET} data]} {
+							print $nick "Search error: $data"
+							return 0
+						}
+					} elseif [validflag -popular] {
+						if {[catch {twitter:senddata $handle $nick $twitter::search_url [list q ${4e} show_user true since_id $id result_type popular] GET} data]} {
+							print $nick "Search error: $data"
+							return 0
+						}
+					} elseif [validflag -mixed] {
+						if {[catch {twitter:senddata $handle $nick $twitter::search_url [list q ${4e} show_user true since_id $id result_type mixed] GET} data]} {
+							print $nick "Search error: $data"
+							return 0
+						}
+					} else {
+						if {[catch {twitter:senddata $handle $nick $twitter::search_url [list q ${4e} show_user true since_id $id result_type mixed] GET} data]} {
+							print $nick "Search error: $data"
+							return 0
+						}
+					}
+
+					set x 0
+					foreach r $data {
+						set id [dict get $r id]
+						set name [dict get $r name]
+						set uname [dict get $r screen_name]
+						
+					}
+				}
 			}
-
-			set x 0
-
-			foreach u $data {
-				set name [dict get $u name]
-				set screen_name [dict get $u screen_name]
-				set location [dict get $u location]
-				set desc [dict get $u description]
-				set follow [dict get $u following]
-				set followers [dict get $u followers_count]
-				set friends [dict get $u friends_count]
-				set created [clock format [clock scan [lreplace [split [dict get $u created_at]] 4 4] -gmt true] -format "%a, %b %d, %Y @ %r %Z"]
-
-				print $nick "[incr x]. \002$name ($screen_name)\002"
-				print $nick "\002Description:\002 $desc \002Location:\002 $location \002Following:\002 $follow \002Followers:\002 $followers \002Friends:\002 $friends \002Created:\002 $created"
-			}
-			print $nick ">End Search"
-			return 0
 		}
 
 		fav - favorite - favorites {
@@ -1104,7 +1161,7 @@ proc SB:proc_twitter {nick host handle chan arg} {
 				}
 
 				default {
-					# View your favoirted tweets
+					# View your favorited tweets
 					# BOT twitter (or tw) favorites
 					set twhome [sbdget TWITTER:HOME]
 					if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}

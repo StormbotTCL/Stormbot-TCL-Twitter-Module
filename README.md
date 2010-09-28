@@ -16,6 +16,13 @@ You can always get the latest source from <http://github.com/demonicpagan/Stormb
 
 Changelog - Dates are in Epoch time
 -----------------------------------
+1285642009
+
+*	Added the latest tweet posted for each user searched for via BOT TWITTER SEARCH USER <name>.
+*	Working on adding the ability to search for text within tweets. This feature not complete yet. Have to add flag handling as they aren't placed
+in the typical SB6 location which would be after the command name, in this case, TWITTER. Thes flags will be after the sub command TWEET which in 
+return is part of SEARCH. The command syntax will be TWITTER SEARCH TWEET <flags> <query>.
+
 1285250941
 
 *	Fixed display of the URL shortner. Only moourl was displaying properly, now all do once again.
