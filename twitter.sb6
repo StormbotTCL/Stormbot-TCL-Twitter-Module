@@ -96,6 +96,7 @@ proc oauth:query_call {url method params {sign_params {}} {token_secret {}}} {
 # do http request with oauth header
 proc oauth:query {url method oauth_header {query {}}} {
 	set header [list Authorization [concat "OAuth" $oauth_header]]
+#msghome URL($url)
 	set token [http::geturl $url -headers $header -query $query -method $method -timeout $oauth::timeout]
 	set data [http::data $token]
 #msghome DATA($data)
@@ -104,7 +105,13 @@ proc oauth:query {url method oauth_header {query {}}} {
 	http::cleanup $token
 
 	if [string eq 401 $ncode] {error "$result. (code: $ncode)"; return 0}
-	if [string eq 403 $ncode] {error "You have reached your API limit, or you may already be (un)following this person. If you are performing a search, you must provide a search query. (code: $ncode)"; return 0}
+	if [string eq 403 $ncode] {
+		foreach x $data {
+			set reason [split $x ":"]
+			lassign $reason code reason
+			error "$reason (code: $ncode)" ; return 0
+		}
+	}
 	if [string eq 404 $ncode] {error "The page that is trying to be accessed cannot be found. (code: $ncode)"; return 0}
 	if [string eq -1 $ncode]  {error "Unknown error: $data"; return 0}
 	if [string eq 400 $ncode] {error "Couldn't send/retrieve your tweet(s)/mentions/timeline/direct message/block list, please try again. (code: $ncode)"; return 0}
@@ -1073,7 +1080,7 @@ proc SB:proc_twitter {nick host handle chan arg} {
 
 				tweet {
 					# Search for tweets with contained query
-					# BOT twitter search tweet <-recent|-popular|-mixed|-source> <query>
+					# BOT twitter search tweet <-recent|-popular|-mixed|-until> <query>
 					set twhome [sbdget TWITTER:HOME]
 					if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
 					if ![string eq -nocase $chan $twhome] {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
@@ -1082,7 +1089,7 @@ proc SB:proc_twitter {nick host handle chan arg} {
 
 					set arg $2e
 					SB:setvariables -mixed -recent -popular
-					if {[llength $flags] > 1} {empty flags}; # Fall-through to next check ....
+					if {[llength $flags] > 2} {empty flags}; # Fall-through to next check ....
 					if [isempty flags] {set flags -mixed}
 
 					# Use twitter:senddata process
@@ -1102,6 +1109,7 @@ proc SB:proc_twitter {nick host handle chan arg} {
 							return 0
 						}
 					}
+
 					set results [list $data]
 
 					foreach r $results {
