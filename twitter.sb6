@@ -98,15 +98,15 @@ proc oauth:query {url method oauth_header {query {}}} {
 	set header [list Authorization [concat "OAuth" $oauth_header]]
 	set token [http::geturl $url -headers $header -query $query -method $method -timeout $oauth::timeout]
 	set data [http::data $token]
-msghome DATA($data)
-dumpfile result.json $data
+#msghome DATA($data)
+#dumpfile result.json $data
 	set ncode [http::ncode $token]
 	http::cleanup $token
 
 	if [string eq 401 $ncode] {error "$result. (code: $ncode)"; return 0}
-	if [string eq 403 $ncode] {error "You have reached your API limit, or you may already be (un)following this person. (code: $ncode)"; return 0}
+	if [string eq 403 $ncode] {error "You have reached your API limit, or you may already be (un)following this person. If you are performing a search, you must provide a search query. (code: $ncode)"; return 0}
 	if [string eq 404 $ncode] {error "The page that is trying to be accessed cannot be found. (code: $ncode)"; return 0}
-	if [string eq -1 $ncode] {error "Unknown error: $data"; return 0}
+	if [string eq -1 $ncode]  {error "Unknown error: $data"; return 0}
 	if [string eq 400 $ncode] {error "Couldn't send/retrieve your tweet(s)/mentions/timeline/direct message/block list, please try again. (code: $ncode)"; return 0}
 	if [string eq 502 $ncode] {error "Twitter / Over capacity. (code: $ncode)"; return 0}
 	if [string eq 503 $ncode] {error "No available server to handle this request. (code: $ncode)"; return 0}
@@ -238,8 +238,7 @@ proc SB:proc_twitter {nick host handle chan arg} {
 			}
 			printh $nick "\002Client Option\002"
 				printh $nick "Syntax: $::botnick TWITTER DISPLAY <off/on> (Display the readable name of twitter user)"
-				printh $nick "Syntax: $::botnick TWITTER STATUS (Display the rate limit status of your account)"
-				printh $nick "Syntax: $::botnick TWITTER PROFILE SET (-name|-url|-location|-description) (Sets your profile information)"
+				printh $nick "Syntax: $::botnick TWITTER RATELIMIT (Display the rate limit status of your account)"
 				printh $nick "Syntax: $::botnick TWITTER SHORTENLEN <number> (Set the length of url's that will be shortened. 12-20 recommended)"
 				printh $nick "Syntax: $::botnick TWITTER SHORTENER <option> (0=is.gd, 1=moourl.com, 2=bit.ly, 3=cli.gs)"
 				printh $nick "Syntax: $::botnick TWITTER BITLYUN (Your bit.ly account username)"
@@ -360,10 +359,10 @@ proc SB:proc_twitter {nick host handle chan arg} {
 			return 0
 		}
 
-		rate - ratelimit {
+		rate - limit - ratelimit {
 			set twhome [sbdget TWITTER:HOME]
 			if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
-			if {[stl $chan] != [stl $twhome]} {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
+			if ![string eq -nocase $chan $twhome] {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
 
 			# Use twitter:senddata process
 			if {[catch {twitter:senddata $handle $nick $twitter::rate_limit_url {} GET} result]} {
@@ -398,7 +397,7 @@ proc SB:proc_twitter {nick host handle chan arg} {
 			# URLs/Links have to be greater than this number to be reduced by the shortner setting.
 			set twhome [sbdget TWITTER:HOME]
 			if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
-			if {[stl $chan] != [stl $twhome]} {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
+			if ![string eq -nocase $chan $twhome] {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
 
 			if [isempty 2] {print $nick "Your current URLs/Links will be shortened if greater than [getdata $handle TWSHORTEN] characters"; return 0}
 
@@ -413,7 +412,7 @@ proc SB:proc_twitter {nick host handle chan arg} {
 			# 0=is.gd, 1=moourl.com, 2=bit.ly, 3=cli.gs
 			set twhome [sbdget TWITTER:HOME]
 			if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
-			if {[stl $chan] != [stl $twhome]} {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
+			if ![string eq -nocase $chan $twhome] {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
 
 			if [isempty 2] {print $nick "You are currently using [lindex [list http://is.gd http://moourl.com http://bit.ly http://cli.gs] [getdata $handle TWSHORTENER]] as your URL shortener."; return 0}
 
@@ -455,7 +454,7 @@ proc SB:proc_twitter {nick host handle chan arg} {
 		rtok - reqtok - reqtoken - requesttoken {
 			set twhome [sbdget TWITTER:HOME]
 			if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
-			if {[stl $chan] != [stl $twhome]} {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
+			if ![string eq -nocase $chan $twhome] {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
 
 			if {[catch {oauth:get_request_token} data]} {
 				print $nick "Error: $data"
@@ -471,7 +470,7 @@ proc SB:proc_twitter {nick host handle chan arg} {
 		atok - acctok - acctoken - accesstoken {
 			set twhome [sbdget TWITTER:HOME]
 			if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
-			if {[stl $chan] != [stl $twhome]} {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
+			if ![string eq -nocase $chan $twhome] {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
 
 			if [string eq "" $2e] {print $nick "USAGE: $::botnick TWITTER ACCTOKEN <oauth token> <oauth token secret> <pin>"; return 0}
 
@@ -498,7 +497,7 @@ proc SB:proc_twitter {nick host handle chan arg} {
 		profile {
 			set twhome [sbdget TWITTER:HOME]
 			if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
-			if {[stl $chan] != [stl $twhome]} {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
+			if ![string eq -nocase $chan $twhome] {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
 
 			switch -exact -- $l2 {
 				set {
@@ -612,7 +611,7 @@ proc SB:proc_twitter {nick host handle chan arg} {
 			# Retweet: BOT twitter (or tw) retweet (or rt) <id> to retweet a message
 			set twhome [sbdget TWITTER:HOME]
 			if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
-			if {[stl $chan] != [stl $twhome]} {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
+			if ![string eq -nocase $chan $twhome] {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
 
 			# Use twitter:senddata process
 			if {[catch {twitter:senddata $handle $nick "${twitter::retweet_url}${2}.json" {} POST} result]} {
@@ -635,7 +634,7 @@ proc SB:proc_twitter {nick host handle chan arg} {
 					# Direct Message: BOT twitter (or tw) dm send <name> <msg> to direct message one of your followers
 					set twhome [sbdget TWITTER:HOME]
 					if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
-					if {[stl $chan] != [stl $twhome]} {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
+					if ![string eq -nocase $chan $twhome] {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
 
 					set params [list screen_name $3 text [twitter:urlshorten [twitter:replacetext $j4e]]]
 
@@ -669,7 +668,7 @@ proc SB:proc_twitter {nick host handle chan arg} {
 					# List your direct messages
 					set twhome [sbdget TWITTER:HOME]
 					if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
-					if {[stl $chan] != [stl $twhome]} {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
+					if ![string eq -nocase $chan $twhome] {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
 
 					# Use twitter:senddata process
 					if {[catch {twitter:senddata $handle $nick $twitter::dmsg_list_url} result]} {
@@ -679,7 +678,7 @@ proc SB:proc_twitter {nick host handle chan arg} {
 
 					# Retrieve direct messages
 					set msgs [lreverse $result]
-					set x 0
+					zero x
 					foreach msg $msgs {
 						set id [dict get $msg id]
 						set text [twitter:convert-unicode [SB:convert_html_codes [dict get $msg text]]]
@@ -698,7 +697,7 @@ proc SB:proc_twitter {nick host handle chan arg} {
 					# BOT twitter (or tw) dm del <msg id #> Delete Direct messages
 					set twhome [sbdget TWITTER:HOME]
 					if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
-					if {[stl $chan] != [stl $twhome]} {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
+					if ![string eq -nocase $chan $twhome] {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
 
 					# Use twitter:senddata process
 					if {[catch {twitter:senddata $handle $nick $twitter::dmsg_del_url [list id $3]} result]} {
@@ -729,7 +728,7 @@ proc SB:proc_twitter {nick host handle chan arg} {
 					# Add someone to the block list
 					set twhome [sbdget TWITTER:HOME]
 					if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
-					if {[stl $chan] != [stl $twhome]} {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
+					if ![string eq -nocase $chan $twhome] {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
 
 					# Use twitter:senddata process
 					if {[catch {twitter:senddata $handle $nick $twitter::block_add_url [list screen_name $3]} result]} {
@@ -751,7 +750,7 @@ proc SB:proc_twitter {nick host handle chan arg} {
 					# Remove someone from the block list
 					set twhome [sbdget TWITTER:HOME]
 					if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
-					if {[stl $chan] != [stl $twhome]} {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
+					if ![string eq -nocase $chan $twhome] {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
 
 					# Use twitter:senddata process
 					if {[catch {twitter:senddata $handle $nick $twitter::block_del_url [list screen_name $3]} result]} {
@@ -773,7 +772,7 @@ proc SB:proc_twitter {nick host handle chan arg} {
 					# Check to see if someone is on the block list
 					set twhome [sbdget TWITTER:HOME]
 					if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
-					if {[stl $chan] != [stl $twhome]} {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
+					if ![string eq -nocase $chan $twhome] {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
 
 					set url ${twitter::block_chk_url}?[http::formatQuery screen_name $3]
 
@@ -797,7 +796,7 @@ proc SB:proc_twitter {nick host handle chan arg} {
 					# List your blocked users
 					set twhome [sbdget TWITTER:HOME]
 					if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
-					if {[stl $chan] != [stl $twhome]} {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
+					if ![string eq -nocase $chan $twhome] {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
 
 					# Use twitter:senddata process
 					if {[catch {twitter:senddata $handle $nick $twitter::block_list_url} result]} {
@@ -806,7 +805,7 @@ proc SB:proc_twitter {nick host handle chan arg} {
 					}
 
 					set nfo [lreverse $result]
-					set x 0
+					zero x
 					foreach a $nfo {
 						set id [dict get $a id]
 						set sname [dict get $a screen_name]
@@ -824,7 +823,7 @@ proc SB:proc_twitter {nick host handle chan arg} {
 			# Friends: BOT twitter (or tw) friends  - to retrieve a friend's timeline
 			set twhome [sbdget TWITTER:HOME]
 			if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
-			if {[stl $chan] != [stl $twhome]} {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
+			if ![string eq -nocase $chan $twhome] {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
 
 			set twfreply [getdata $handle since_freplies_id]
 			if [isempty twfreply] { set twfreply 1 }
@@ -887,7 +886,7 @@ proc SB:proc_twitter {nick host handle chan arg} {
 					# Replies: BOT twitter (or tw) replies to retrieve your replies (@yourname) timeline
 					set twhome [sbdget TWITTER:HOME]
 					if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
-					if {[stl $chan] != [stl $twhome]} {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
+					if ![string eq -nocase $chan $twhome] {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
 
 					set twreply [getdata $handle since_replies]
 					if [isempty twreply] { set twreply 1 }
@@ -901,7 +900,7 @@ proc SB:proc_twitter {nick host handle chan arg} {
 					if [isempty result] {print $nick "You have no recent mentions. You have already viewed your most recent ones. Use $::botnick TWITTER MENTIONS CLEAR CLEAR to reset and view again."; return 0}
 
 					set replies [lreverse $result]
-					set x 0
+					zero x
 
 					foreach reply $replies {
 						set id [dict get $reply id]
@@ -936,7 +935,7 @@ proc SB:proc_twitter {nick host handle chan arg} {
 			# Follow: BOT twitter (or tw) follow <name> to follow a user
 			set twhome [sbdget TWITTER:HOME]
 			if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
-			if {[stl $chan] != [stl $twhome]} { print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
+			if ![string eq -nocase $chan $twhome] { print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
 			if [isempty l2] {print $nick "You must input a twitter account to follow."; return 0}
 
 			# Use twitter:senddata process
@@ -957,7 +956,7 @@ proc SB:proc_twitter {nick host handle chan arg} {
 			# Unfollow: BOT twitter (or tw) unfollow <name> to unfollow a user
 			set twhome [sbdget TWITTER:HOME]
 			if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
-			if {[stl $chan] != [stl $twhome]} { print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
+			if ![string eq -nocase $chan $twhome] { print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
 			if [isempty l2] {print $nick "You must input a twitter account to unfollow."; return 0}
 
 			# Use twitter:senddata process
@@ -979,7 +978,7 @@ proc SB:proc_twitter {nick host handle chan arg} {
 			# BOT twitter (or tw) trends
 			set twhome [sbdget TWITTER:HOME]
 			if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
-			if {[stl $chan] != [stl $twhome]} {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
+			if ![string eq -nocase $chan $twhome] {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
 
 			# Use twitter:senddata process
 			if {[catch {twitter:senddata $handle $nick $twitter::trends_url} result]} {
@@ -996,7 +995,7 @@ proc SB:proc_twitter {nick host handle chan arg} {
 				# converts it to Sat, May 26, 2007 @ 12:45 pm GMT
 				# Taking in consideration for 8.4 backwards compatibility
 				set asof [clock format [clock scan [lreplace [split [dict get $t as_of]] 5 5] -gmt true] -format "%a, %b %d, %Y @ %r %Z"]
-				set x 0
+				zero x
 
 				foreach a $trends {
 					set name [dict get $a name]
@@ -1034,7 +1033,7 @@ proc SB:proc_twitter {nick host handle chan arg} {
 					# BOT twitter search user <user>
 					set twhome [sbdget TWITTER:HOME]
 					if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
-					if {[stl $chan] != [stl $twhome]} {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
+					if ![string eq -nocase $chan $twhome] {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
 
 					set user $3e
 
@@ -1044,7 +1043,7 @@ proc SB:proc_twitter {nick host handle chan arg} {
 						return 0
 					}
 
-					set x 0
+					zero x
 
 					foreach u $data {
 						set name [dict get $u name]
@@ -1077,40 +1076,58 @@ proc SB:proc_twitter {nick host handle chan arg} {
 					# BOT twitter search tweet <-recent|-popular|-mixed|-source> <query>
 					set twhome [sbdget TWITTER:HOME]
 					if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
-					if {[stl $chan] != [stl $twhome]} {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
+					if ![string eq -nocase $chan $twhome] {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
 
 					set id [getdata $handle since_search_id]
 
+					set arg $2e
+					SB:setvariables -mixed -recent -popular
+					if {[llength $flags] > 1} {empty flags}; # Fall-through to next check ....
+					if [isempty flags] {set flags -mixed}
+
 					# Use twitter:senddata process
 					if [validflag -recent] {
-						if {[catch {twitter:senddata $handle $nick $twitter::search_url [list q ${4e} show_user true since_id $id result_type recent] GET} data]} {
+						if {[catch {twitter:senddata $handle $nick $twitter::search_url [list q ${1e} show_user true since_id $id result_type recent] GET} data]} {
 							print $nick "Search error: $data"
 							return 0
 						}
 					} elseif [validflag -popular] {
-						if {[catch {twitter:senddata $handle $nick $twitter::search_url [list q ${4e} show_user true since_id $id result_type popular] GET} data]} {
+						if {[catch {twitter:senddata $handle $nick $twitter::search_url [list q ${1e} show_user true since_id $id result_type popular] GET} data]} {
 							print $nick "Search error: $data"
 							return 0
 						}
 					} elseif [validflag -mixed] {
-						if {[catch {twitter:senddata $handle $nick $twitter::search_url [list q ${4e} show_user true since_id $id result_type mixed] GET} data]} {
-							print $nick "Search error: $data"
-							return 0
-						}
-					} else {
-						if {[catch {twitter:senddata $handle $nick $twitter::search_url [list q ${4e} show_user true since_id $id result_type mixed] GET} data]} {
+						if {[catch {twitter:senddata $handle $nick $twitter::search_url [list q ${1e} show_user true since_id $id result_type mixed] GET} data]} {
 							print $nick "Search error: $data"
 							return 0
 						}
 					}
+					set results [list $data]
 
-					set x 0
-					foreach r $data {
-						set id [dict get $r id]
-						set name [dict get $r name]
-						set uname [dict get $r screen_name]
-						
+					foreach r $results {
+						set result [dict get $r results]
+						set since [dict get $r since_id]
+						set query [dict get $r query]
+						set time [dict get $r completed_in]
+
+						zero x
+
+						foreach res $result {
+							set name [dict get $res from_user]
+
+							set text [twitter:convert-unicode [SB:convert_html_codes [dict get $res text]]]
+							# Replace utf-8 entities that aren't covered by SB:convert_html_codes
+							foreach {a b} [list \u2014 -- \u2019 ' \u2018 ' &#8212\\\; -- \u2013 -] {regsub -all $a $text $b text}
+
+							print $nick "[incr x]. $name: $text"
+						}
+
+						print $nick "Query: $query, Completed in ${time}s"
+
+						setdata $handle since_search_id $since
 					}
+					save
+					return 0
 				}
 			}
 		}
@@ -1122,7 +1139,7 @@ proc SB:proc_twitter {nick host handle chan arg} {
 					# BOT twitter (or tw) favorites add
 					set twhome [sbdget TWITTER:HOME]
 					if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
-					if {[stl $chan] != [stl $twhome]} {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
+					if ![string eq -nocase $chan $twhome] {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
 
 					# Use twitter:senddata process
 					if {[catch {twitter:senddata $handle $nick "${twitter::fav_add_url}${3}.json" {} POST} result]} {
@@ -1143,7 +1160,7 @@ proc SB:proc_twitter {nick host handle chan arg} {
 					# BOT twitter (or tw) favorites del
 					set twhome [sbdget TWITTER:HOME]
 					if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
-					if {[stl $chan] != [stl $twhome]} {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
+					if ![string eq -nocase $chan $twhome] {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
 
 					# Use twitter:senddata process
 					if {[catch {twitter:senddata $handle $nick "${twitter::fav_del_url}${3}.json" {} POST} result]} {
@@ -1165,7 +1182,7 @@ proc SB:proc_twitter {nick host handle chan arg} {
 					# BOT twitter (or tw) favorites
 					set twhome [sbdget TWITTER:HOME]
 					if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
-					if {[stl $chan] != [stl $twhome]} {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
+					if ![string eq -nocase $chan $twhome] {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
 
 					# Use twitter:senddata process
 					if {[catch {twitter:senddata $handle $nick $twitter::fav_list_url} result]} {
@@ -1174,7 +1191,7 @@ proc SB:proc_twitter {nick host handle chan arg} {
 					}
 
 					set fav [lreverse $result]
-					set x 0
+					zero x
 
 					foreach f $fav {
 						set user [dict get $f user]
@@ -1218,7 +1235,7 @@ proc SB:proc_twitter {nick host handle chan arg} {
 					# BOT twitter status delete <msg id>
 					set twhome [sbdget TWITTER:HOME]
 					if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
-					if {[stl $chan] != [stl $twhome]} {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
+					if ![string eq -nocase $chan $twhome] {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
 
 					# Use twitter:senddata process
 					if {[catch {twitter:senddata $handle $nick $twitter::status_del_url [list id $3]} result]} {
@@ -1241,7 +1258,7 @@ proc SB:proc_twitter {nick host handle chan arg} {
 					# BOT twitter status reply <msg id>
 					set twhome [sbdget TWITTER:HOME]
 					if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
-					if {[stl $chan] != [stl $twhome]} {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
+					if ![string eq -nocase $chan $twhome] {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
 
 					# Use twitter:senddata process
 					if {[catch {twitter:senddata $handle $nick $twitter::status_url [list in_reply_to_status_id $3 status [twitter:urlshorten [twitter:replacetext $j4e]]]} result]} {
@@ -1275,7 +1292,7 @@ proc SB:proc_twitter {nick host handle chan arg} {
 					# BOT twitter status show <msg id>
 					set twhome [sbdget TWITTER:HOME]
 					if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
-					if {[stl $chan] != [stl $twhome]} {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
+					if ![string eq -nocase $chan $twhome] {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
 
 					# Use twitter:senddata process
 					if {[catch {twitter:senddata $handle $nick $twitter::status_show_url [list id $3] GET} result]} {
@@ -1327,7 +1344,7 @@ proc SB:proc_twitter {nick host handle chan arg} {
 			# BOT twitter (or tw) <msg>
 			set twhome [sbdget TWITTER:HOME]
 			if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
-			if {[stl $chan] != [stl $twhome]} {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
+			if ![string eq -nocase $chan $twhome] {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
 
 			# Use twitter:senddata process
 			if {[catch {twitter:senddata $handle $nick $twitter::status_url [list status [twitter:urlshorten [twitter:replacetext $j1e]]]} result]} {

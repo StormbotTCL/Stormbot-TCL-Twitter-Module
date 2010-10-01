@@ -16,6 +16,15 @@ You can always get the latest source from <http://github.com/demonicpagan/Stormb
 
 Changelog - Dates are in Epoch time
 -----------------------------------
+1285908026
+
+*	Now have the search feature implemented for tweets. I thank Mai for the tutorial on how to handle the flags. It handles MOST search queries. Some 
+that it doesn't are instances where you are looking for tweets until a certain time frame. I don't foresee this being something this search feature 
+will be able to handle.
+*	Updated the HELP. Removed a duplicate entry for setting profile elements and noticed I had how to call rate limiting worded wrong for the command 
+in the help.
+*	Updated the error message returned if a 403 error is encountered.
+
 1285642009
 
 *	Added the latest tweet posted for each user searched for via BOT TWITTER SEARCH USER <name>.
