@@ -16,6 +16,10 @@ You can always get the latest source from <http://github.com/demonicpagan/Stormb
 
 Changelog - Dates are in Epoch time
 -----------------------------------
+1286514407
+
+*	Just added a couple more words to the replace text list. This isn't a big update. Nothing to fix, update until I locate (or you locate) any bugs.
+
 1285908026
 
 *	Now have the search feature implemented for tweets. I thank Mai for the tutorial on how to handle the flags. It handles MOST search queries. Some 

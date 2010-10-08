@@ -1454,7 +1454,7 @@ proc twitter:replacetext text {
 	set list(9) [list "oh my fucking god" OMFG please plz "rolling on the floor laughing" ROFL retweet RT]
 	set list(10) [list "thanks for the retweet" RTHX "tweet me back" TMB "too much information" TMI]
 	set list(11) [list "talk to you soon" TTYS "talk to you later" TTYL "thank you" TY "what the heck" WTH]
-	set list(12) [list "what the hell" WTH "what the fuck" WTF "you're welcome" YW "you are welcome" YW]
+	set list(12) [list "what the hell" WTH "what the fuck" WTF "you're welcome" YW "you are welcome" YW very vry awesome awsm]
 
 	foreach x [lsort -int -inc [array names list]] {
 		set item $list($x)
