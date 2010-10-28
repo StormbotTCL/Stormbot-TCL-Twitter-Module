@@ -250,6 +250,7 @@ proc SB:proc_twitter {nick host handle chan arg} {
 				printh $nick "Syntax: $::botnick TWITTER SHORTENER <option> (0=is.gd, 1=moourl.com, 2=bit.ly, 3=cli.gs)"
 				printh $nick "Syntax: $::botnick TWITTER BITLYUN (Your bit.ly account username)"
 				printh $nick "Syntax: $::botnick TWITTER BITLYAPI (Your bit.ly account API key)"
+				printh $nick "Syntax: $::botnick TWITTER SETUSERNAME <username> (Set your username - useful if you want messages to stand out that are sent to you)"
 			printh $nick ""
 			printh $nick "\002Client commands\002"
 				printh $nick "Syntax: $::botnick TWITTER REQTOKEN (Request your oAuth token)"
@@ -455,6 +456,14 @@ proc SB:proc_twitter {nick host handle chan arg} {
 			setdata $handle BITLY-APIKEY $2
 			save
 			print $nick "Your bit.ly API Key has been saved."
+			return 0
+		}
+
+		name - setuser - setname - setusername {
+			if [isempty 2] { set name [getdata $handle TWNAME]; printh $nick "Your TWITTER username is set to $nick"; return 0}
+			setdata $handle TWNAME $2
+			save
+			print $nick "Your username has been saved."
 			return 0
 		}
 
@@ -1454,7 +1463,7 @@ proc twitter:replacetext text {
 	set list(9) [list "oh my fucking god" OMFG please plz "rolling on the floor laughing" ROFL retweet RT]
 	set list(10) [list "thanks for the retweet" RTHX "tweet me back" TMB "too much information" TMI]
 	set list(11) [list "talk to you soon" TTYS "talk to you later" TTYL "thank you" TY "what the heck" WTH]
-	set list(12) [list "what the hell" WTH "what the fuck" WTF "you're welcome" YW "you are welcome" YW very vry awesome awsm]
+	set list(12) [list "what the hell" WTH "what the fuck" WTF "you're welcome" YW "you are welcome" YW]
 
 	foreach x [lsort -int -inc [array names list]] {
 		set item $list($x)

@@ -16,6 +16,13 @@ You can always get the latest source from <http://github.com/demonicpagan/Stormb
 
 Changelog - Dates are in Epoch time
 -----------------------------------
+1288238995
+
+*	When upgrading this bead to use oAuth instead of Basic Auth, I inadvertantly pulled storing your TWITTER username to your bot's user data file.
+This was stored and used in displaying messages that contained your TWITTER username. Those messages were returned as a different color when displayed 
+in the room. For those of you just starting to use this bead, you would have never seen this, only those that started using this bead prior to TWITTERs
+conversion. I have added back the ability to store your username and made this feature available to all once again.
+
 1286514407
 
 *	Just added a couple more words to the replace text list. This isn't a big update. Nothing to fix, update until I locate (or you locate) any bugs.
