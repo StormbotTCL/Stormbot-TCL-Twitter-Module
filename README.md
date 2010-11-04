@@ -16,6 +16,12 @@ You can always get the latest source from <http://github.com/demonicpagan/Stormb
 
 Changelog - Dates are in Epoch time
 -----------------------------------
+1288858914
+
+*	Fixed how I was creating my list to parse through for the 403 error response.
+*	When I wrote the code for errors returned for Twitter's 403 response code, I failed to pass the error display in the follow and unfollow commands.
+*	Since 400 errors are returned the same way 403 errors are returned, cleaned up code for this.
+
 1288852992
 
 *	Added a default error message when trying to search for something without specifying USER or TWEET after SEARCH.

@@ -102,19 +102,19 @@ proc oauth:query {url method oauth_header {query {}}} {
 #msghome DATA($data)
 #dumpfile result.json $data
 	set ncode [http::ncode $token]
+#msghome NCODE($ncode)
 	http::cleanup $token
 
 	if [string eq 401 $ncode] {error "$result. (code: $ncode)"; return 0}
-	if [string eq 403 $ncode] {
-		foreach x $data {
-			set reason [split $x ":"]
-			lassign $reason code reason
-			error "$reason (code: $ncode)" ; return 0
+	if {[string eq 403 $ncode] || [string eq 400 $ncode]}{
+		foreach x [list $data] {
+			set reason [split $x \"]
+			lassign $reason blank error code reason
 		}
+		error "$reason (code: $ncode)"; return 0
 	}
 	if [string eq 404 $ncode] {error "The page that is trying to be accessed cannot be found. (code: $ncode)"; return 0}
 	if [string eq -1 $ncode]  {error "Unknown error: $data"; return 0}
-	if [string eq 400 $ncode] {error "Couldn't send/retrieve your tweet(s)/mentions/timeline/direct message/block list, please try again. (code: $ncode)"; return 0}
 	if [string eq 502 $ncode] {error "Twitter / Over capacity. (code: $ncode)"; return 0}
 	if [string eq 503 $ncode] {error "No available server to handle this request. (code: $ncode)"; return 0}
 
@@ -957,11 +957,7 @@ proc SB:proc_twitter {nick host handle chan arg} {
 
 			# Use twitter:senddata process
 			if {[catch {twitter:senddata $handle $nick $twitter::follow_url [list screen_name $l2]} result]} {
-				return 0
-			}
-
-			if {[dict exists $result error]} {
-				print $nick "Follow failed ($l2): [dict get $result error]"
+				printh $nick $result
 				return 0
 			}
 
@@ -978,11 +974,7 @@ proc SB:proc_twitter {nick host handle chan arg} {
 
 			# Use twitter:senddata process
 			if {[catch {twitter:senddata $handle $nick $twitter::unfollow_url [list screen_name $l2]} result]} {
-				return 0
-			}
-
-			if {[dict exists $result error]} {
-				print $nick "Unfollow failed ($l2): [dict get $result error]"
+				printh $nick $result
 				return 0
 			}
 
