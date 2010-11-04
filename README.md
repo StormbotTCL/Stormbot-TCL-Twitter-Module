@@ -16,6 +16,10 @@ You can always get the latest source from <http://github.com/demonicpagan/Stormb
 
 Changelog - Dates are in Epoch time
 -----------------------------------
+1288886393
+
+*	Failed to put a space after a } and before a { thus causing the following error: Retrieval error. (extra characters after close-brace)
+
 1288858914
 
 *	Fixed how I was creating my list to parse through for the 403 error response.

@@ -106,7 +106,7 @@ proc oauth:query {url method oauth_header {query {}}} {
 	http::cleanup $token
 
 	if [string eq 401 $ncode] {error "$result. (code: $ncode)"; return 0}
-	if {[string eq 403 $ncode] || [string eq 400 $ncode]}{
+	if {[string eq 403 $ncode] || [string eq 400 $ncode]} {
 		foreach x [list $data] {
 			set reason [split $x \"]
 			lassign $reason blank error code reason
