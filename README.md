@@ -16,6 +16,12 @@ You can always get the latest source from <http://github.com/demonicpagan/Stormb
 
 Changelog - Dates are in Epoch time
 -----------------------------------
+1288852992
+
+*	Added a default error message when trying to search for something without specifying USER or TWEET after SEARCH.
+*	Added the number of tweets a user has contributed to twitter when viewing their profile.
+*	Made the numbers commanized (is that even a word?) in the profile viewing.
+
 1288238995
 
 *	When upgrading this bead to use oAuth instead of Basic Auth, I inadvertantly pulled storing your TWITTER username to your bot's user data file.

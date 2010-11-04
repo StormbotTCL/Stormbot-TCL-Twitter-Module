@@ -596,6 +596,7 @@ proc SB:proc_twitter {nick host handle chan arg} {
 						set follow_count [dict get $profile followers_count]
 						set status [dict get $profile status]
 						set ltweet [dict get $status text]
+						set tweets [dict get $profile statuses_count]
 
 						# Format time Sat May 26 12:45:00 +0000 2007 into an integer
 						# converts it to Sat, May 26, 2007 @ 12:45 pm GMT
@@ -614,7 +615,7 @@ proc SB:proc_twitter {nick host handle chan arg} {
 					print $nick "Time Zone: $tzone"
 					print $nick "URL: $url"
 					print $nick "Description: $desc"
-					print $nick "Counts - Friends: $friend_count, Followers: $follow_count, Favorites: $fav_count"
+					print $nick "Counts - Friends: [comma $friend_count], Followers: [comma $follow_count], Favorites: [comma $fav_count], Tweets: [comma $tweets]"
 					print $nick "Last tweet: $ltweet"
 					print $nick "Created: $created"
 					return 0
@@ -1145,6 +1146,10 @@ proc SB:proc_twitter {nick host handle chan arg} {
 					}
 					save
 					return 0
+				}
+
+				default {
+					if {![string eq -nocase $2 user] || ![string eq -nocase $2 tweet]} {printh $nick "Syntax: $::botnick TWITTER SEARCH USER <screen name> OR $::botnick TWITTER SEARCH TWEET <-mixed|-recent|-popular> <query>"; return 0}
 				}
 			}
 		}
