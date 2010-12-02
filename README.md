@@ -16,6 +16,12 @@ You can always get the latest source from <http://github.com/demonicpagan/Stormb
 
 Changelog - Dates are in Epoch time
 -----------------------------------
+1291286136
+
+*	Added f and l for following a user and unfollowing a user as command shortcuts due to finding out that sending a tweet as f <screen name> caused 
+the api to return that last tweet sent from your account. If any other command syntax sent as a tweet causes this, let me know so I can add it to the 
+appropriate command.
+
 1288886393
 
 *	Failed to put a space after a } and before a { thus causing the following error: Retrieval error. (extra characters after close-brace)

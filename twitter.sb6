@@ -948,7 +948,7 @@ proc SB:proc_twitter {nick host handle chan arg} {
 			}
 		}
 
-		folow - follow {
+		f - folow - follow {
 			# Follow: BOT twitter (or tw) follow <name> to follow a user
 			set twhome [sbdget TWITTER:HOME]
 			if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
@@ -965,7 +965,7 @@ proc SB:proc_twitter {nick host handle chan arg} {
 			return 0
 		}
 
-		uf - unfolow - unfollow {
+		l - uf - unfolow - unfollow {
 			# Unfollow: BOT twitter (or tw) unfollow <name> to unfollow a user
 			set twhome [sbdget TWITTER:HOME]
 			if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
@@ -1362,7 +1362,7 @@ proc SB:proc_twitter {nick host handle chan arg} {
 
 			# Use twitter:senddata process
 			if {[catch {twitter:senddata $handle $nick $twitter::status_url [list status [twitter:urlshorten [twitter:replacetext $j1e]]]} result]} {
-				print $nick "Error: Unable to post tweet."
+				print $nick "Error: Unable to post tweet. ($result)"
 				return 0
 			} elseif {[len $j1e] > 140} {
 				set old_text $j1e
