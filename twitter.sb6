@@ -109,7 +109,7 @@ proc oauth:query {url method oauth_header {query {}}} {
 	if {[string eq 403 $ncode] || [string eq 400 $ncode]} {
 		foreach x [list $data] {
 			set reason [split $x \"]
-			lassign $reason blank error code reason
+			set reason [l7 $reason]
 		}
 		error "$reason (code: $ncode)"; return 0
 	}
@@ -243,7 +243,7 @@ proc SB:proc_twitter {nick host handle chan arg} {
 				printh $nick ""
 				printh $nick "Syntax: $::botnick TWITTER RESTRICT <channel> (Only use twitter in this channel, must have 1000 access on the bot to set) - MUST BE SET!."
 			}
-			printh $nick "\002Client Option\002"
+printh $nick "\002 Client Option\002"
 				printh $nick "Syntax: $::botnick TWITTER DISPLAY <off/on> (Display the readable name of twitter user)"
 				printh $nick "Syntax: $::botnick TWITTER RATELIMIT (Display the rate limit status of your account)"
 				printh $nick "Syntax: $::botnick TWITTER SHORTENLEN <number> (Set the length of url's that will be shortened. 12-20 recommended)"
@@ -252,7 +252,7 @@ proc SB:proc_twitter {nick host handle chan arg} {
 				printh $nick "Syntax: $::botnick TWITTER BITLYAPI (Your bit.ly account API key)"
 				printh $nick "Syntax: $::botnick TWITTER SETUSERNAME <username> (Set your username - useful if you want messages to stand out that are sent to you)"
 			printh $nick ""
-			printh $nick "\002Client commands\002"
+printh $nick "\002 Client commands\002"
 				printh $nick "Syntax: $::botnick TWITTER REQTOKEN (Request your oAuth token)"
 				printh $nick "Syntax: $::botnick TWITTER ACCTOKEN <oauth token> <oauth token secret> <PIN from authentication url of $::botnick TWITTER REQTOKEN> (Use your token)"
 				printh $nick "Syntax: $::botnick TWITTER <message text> (Send a status update to twitter - 140 Char limit)"
@@ -367,7 +367,7 @@ proc SB:proc_twitter {nick host handle chan arg} {
 			return 0
 		}
 
-		rate - limit - ratelimit {
+		rate - rl - limit - ratelimit {
 			set twhome [sbdget TWITTER:HOME]
 			if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
 			if ![string eq -nocase $chan $twhome] {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}

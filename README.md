@@ -16,6 +16,11 @@ You can always get the latest source from <http://github.com/demonicpagan/Stormb
 
 Changelog - Dates are in Epoch time
 -----------------------------------
+1296337943
+
+*	Cleaned up help all display to make it look cleaner.
+*	Fixed error display when getting a 400 or 403 error. Actually displays the error instead of a URL.
+
 1291286136
 
 *	Added f and l for following a user and unfollowing a user as command shortcuts due to finding out that sending a tweet as f <screen name> caused 
