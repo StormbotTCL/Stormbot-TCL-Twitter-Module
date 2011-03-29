@@ -16,6 +16,10 @@ You can always get the latest source from <http://github.com/demonicpagan/Stormb
 
 Changelog - Dates are in Epoch time
 -----------------------------------
+1301397334
+
+*	Normalized some lines of coding in the help documentation for it to be more uniform.
+
 1296337943
 
 *	Cleaned up help all display to make it look cleaner.
