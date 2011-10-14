@@ -16,6 +16,12 @@ You can always get the latest source from <http://github.com/demonicpagan/Stormb
 
 Changelog - Dates are in Epoch time
 -----------------------------------
+1318634315
+
+*	Updated the twitter trends api calls, they depreciated the method I was using
+*	Added TRENDS AVAILABLE command to give results as to where there is trending information. This will be a long list. When I ran it for testing 111 results were returned.
+Pagination has not been added to the API for this call.
+
 1301397334
 
 *	Normalized some lines of coding in the help documentation for it to be more uniform.

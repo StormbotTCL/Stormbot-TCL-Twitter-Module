@@ -189,7 +189,8 @@ namespace eval twitter {
 	variable dmsg_send_url "http://api.twitter.com/1/direct_messages/new.json" ; # POST new.json?user=noradio&text=test text
 	variable dmsg_list_url "http://api.twitter.com/1/direct_messages.json" ; # GET
 	variable dmsg_del_url "http://api.twitter.com/1/direct_messages/destroy.json" ; # POST destroy.json?id=12345
-	variable trends_url "http://api.twitter.com/1/trends.json" ; # GET
+	variable trends_url "http://api.twitter.com/1/trends/available.json" ; # GET
+	variable trends_woeid_url "http://api.twitter.com/1/trends/" ; # GET
 	variable follow_url "http://api.twitter.com/1/friendships/create/twitterapi.json" ; # POST twitterapi.json?screen_name=noradio
 	variable unfollow_url "http://api.twitter.com/1/friendships/destroy.json" ; # POST destroy.json?screen_name=noradio
 	variable search_usr_url "http://api.twitter.com/1/users/search.json" ; # GET search.json?q=noradio
@@ -243,43 +244,44 @@ proc SB:proc_twitter {nick host handle chan arg} {
 				printh $nick ""
 				printh $nick "Syntax: $::botnick TWITTER RESTRICT <channel> (Only use twitter in this channel, must have 1000 access on the bot to set) - MUST BE SET!."
 			}
-			printh $nick "\002 Client Option\002"
-			printh $nick "Syntax: $::botnick TWITTER DISPLAY <off/on> (Display the readable name of twitter user)"
-			printh $nick "Syntax: $::botnick TWITTER RATELIMIT (Display the rate limit status of your account)"
-			printh $nick "Syntax: $::botnick TWITTER SHORTENLEN <number> (Set the length of url's that will be shortened. 12-20 recommended)"
-			printh $nick "Syntax: $::botnick TWITTER SHORTENER <option> (0=is.gd, 1=moourl.com, 2=bit.ly, 3=cli.gs)"
-			printh $nick "Syntax: $::botnick TWITTER BITLYUN (Your bit.ly account username)"
-			printh $nick "Syntax: $::botnick TWITTER BITLYAPI (Your bit.ly account API key)"
-			printh $nick "Syntax: $::botnick TWITTER SETUSERNAME <username> (Set your username - useful if you want messages to stand out that are sent to you)"
-			printh $nick ""
-			printh $nick "\002 Client commands\002"
-			printh $nick "Syntax: $::botnick TWITTER REQTOKEN (Request your oAuth token)"
-			printh $nick "Syntax: $::botnick TWITTER ACCTOKEN <oauth token> <oauth token secret> <PIN from authentication url of $::botnick TWITTER REQTOKEN> (Use your token)"
-			printh $nick "Syntax: $::botnick TWITTER <message text> (Send a status update to twitter - 140 Char limit)"
-			printh $nick "Syntax: $::botnick TWITTER FOLLOW <screen name> (Follow a twitter user - Can only be used in Twitter channel)"
-			printh $nick "Syntax: $::botnick TWITTER UNFOLLOW <screen name> (Unfollow a twitter user)"
-			printh $nick "Syntax: $::botnick TWITTER FRIENDS (Displays your public timeline that includes your friends' tweets - at most 20 results)"
-			printh $nick "Syntax: $::botnick TWITTER MENTIONS (Displays messages directed at you.)"
-			printh $nick "Syntax: $::botnick TWITTER MENTIONS CLEAR (Reset your mentions timeline so you can view again if you hadn't been mentioned since last viewing.)"
-			printh $nick "Syntax: $::botnick TWITTER RETWEET <id> (Retweet a message that you found interesting)"
-			printh $nick "Syntax: $::botnick TWITTER DIRECT SEND <name> <msg> (Send a direct message to a user - 140 Char limit)"
-			printh $nick "Syntax: $::botnick TWITTER DIRECT LIST (lists your direct messages and their id number)"
-			printh $nick "Syntax: $::botnick TWITTER DIRECT DEL <msg id #> (deletes a direct message)"
-			printh $nick "Syntax: $::botnick TWITTER BLOCK ADD <screen name> (Add someone to the block list)"
-			printh $nick "Syntax: $::botnick TWITTER BLOCK DEL <screen name> (Remove someone from the block list)"
-			printh $nick "Syntax: $::botnick TWITTER BLOCK CHECK <screen name> (Check to see if someone is on your block list)"
-			printh $nick "Syntax: $::botnick TWITTER BLOCK LIST (List your blocked people)"
-			printh $nick "Syntax: $::botnick TWITTER TRENDS (Displays the current top 10 trending topics with the search URL)"
-			printh $nick "Syntax: $::botnick TWITTER FAVORITES (Displays your favorited tweets)"
-			printh $nick "Syntax: $::botnick TWITTER FAVORITES ADD <msg id #> (Add a tweet to your favorites)"
-			printh $nick "Syntax: $::botnick TWITTER FAVORITES DEL <msg id #> (Remove a tweet from your favorites)"
-			printh $nick "Syntax: $::botnick TWITTER PROFILE VIEW <screen name> (View a users profile)"
-			printh $nick "Syntax: $::botnick TWITTER PROFILE SET <NAME|URL|LOCATION|DESCRIPTION> <attrib> (Set various profile attributes)"
-			printh $nick "Syntax: $::botnick TWITTER SEARCH USER <screen name> (Search for a profile - returns the first 5 results)"
-			printh $nick "Syntax: $::botnick TWITTER SEARCH TWEET <-mixed|-recent|-popular> <query> (Search for tweets, if no flag given, default is mixed)"
-			printh $nick "Syntax: $::botnick TWITTER STATUS SHOW <msg id #> (Show a particular status update)"
-			printh $nick "Syntax: $::botnick TWITTER STATUS DELETE <msg id #> (Delete a tweet YOU sent)"
-			printh $nick "Syntax: $::botnick TWITTER STATUS REPLY <msg id #> <msg> (Link a tweet to a specific status ID)"
+				printh $nick "\002 Client Option\002"
+				printh $nick "Syntax: $::botnick TWITTER DISPLAY <off/on> (Display the readable name of twitter user)"
+				printh $nick "Syntax: $::botnick TWITTER RATELIMIT (Display the rate limit status of your account)"
+				printh $nick "Syntax: $::botnick TWITTER SHORTENLEN <number> (Set the length of url's that will be shortened. 12-20 recommended)"
+				printh $nick "Syntax: $::botnick TWITTER SHORTENER <option> (0=is.gd, 1=moourl.com, 2=bit.ly, 3=cli.gs)"
+				printh $nick "Syntax: $::botnick TWITTER BITLYUN (Your bit.ly account username)"
+				printh $nick "Syntax: $::botnick TWITTER BITLYAPI (Your bit.ly account API key)"
+				printh $nick "Syntax: $::botnick TWITTER SETUSERNAME <username> (Set your username - useful if you want messages to stand out that are sent to you)"
+				printh $nick ""
+				printh $nick "\002 Client commands\002"
+				printh $nick "Syntax: $::botnick TWITTER REQTOKEN (Request your oAuth token)"
+				printh $nick "Syntax: $::botnick TWITTER ACCTOKEN <oauth token> <oauth token secret> <PIN from authentication url of $::botnick TWITTER REQTOKEN> (Use your token)"
+				printh $nick "Syntax: $::botnick TWITTER <message text> (Send a status update to twitter - 140 Char limit)"
+				printh $nick "Syntax: $::botnick TWITTER FOLLOW <screen name> (Follow a twitter user - Can only be used in Twitter channel)"
+				printh $nick "Syntax: $::botnick TWITTER UNFOLLOW <screen name> (Unfollow a twitter user)"
+				printh $nick "Syntax: $::botnick TWITTER FRIENDS (Displays your public timeline that includes your friends' tweets - at most 20 results)"
+				printh $nick "Syntax: $::botnick TWITTER MENTIONS (Displays messages directed at you.)"
+				printh $nick "Syntax: $::botnick TWITTER MENTIONS CLEAR (Reset your mentions timeline so you can view again if you hadn't been mentioned since last viewing.)"
+				printh $nick "Syntax: $::botnick TWITTER RETWEET <id> (Retweet a message that you found interesting)"
+				printh $nick "Syntax: $::botnick TWITTER DIRECT SEND <name> <msg> (Send a direct message to a user - 140 Char limit)"
+				printh $nick "Syntax: $::botnick TWITTER DIRECT LIST (lists your direct messages and their id number)"
+				printh $nick "Syntax: $::botnick TWITTER DIRECT DEL <msg id #> (deletes a direct message)"
+				printh $nick "Syntax: $::botnick TWITTER BLOCK ADD <screen name> (Add someone to the block list)"
+				printh $nick "Syntax: $::botnick TWITTER BLOCK DEL <screen name> (Remove someone from the block list)"
+				printh $nick "Syntax: $::botnick TWITTER BLOCK CHECK <screen name> (Check to see if someone is on your block list)"
+				printh $nick "Syntax: $::botnick TWITTER BLOCK LIST (List your blocked people)"
+				printh $nick "Syntax: $::botnick TWITTER TRENDS <1|woeid #> (Displays the current top 10 trending topics with the search URL for location specified, if none or 1, then shows world trends)"
+				printh $nick "Syntax: $::botnick TWITTER AVAILABLE (Displays trend data for available locations)"
+				printh $nick "Syntax: $::botnick TWITTER FAVORITES (Displays your favorited tweets)"
+				printh $nick "Syntax: $::botnick TWITTER FAVORITES ADD <msg id #> (Add a tweet to your favorites)"
+				printh $nick "Syntax: $::botnick TWITTER FAVORITES DEL <msg id #> (Remove a tweet from your favorites)"
+				printh $nick "Syntax: $::botnick TWITTER PROFILE VIEW <screen name> (View a users profile)"
+				printh $nick "Syntax: $::botnick TWITTER PROFILE SET <NAME|URL|LOCATION|DESCRIPTION> <attrib> (Set various profile attributes)"
+				printh $nick "Syntax: $::botnick TWITTER SEARCH USER <screen name> (Search for a profile - returns the first 5 results)"
+				printh $nick "Syntax: $::botnick TWITTER SEARCH TWEET <-mixed|-recent|-popular> <query> (Search for tweets, if no flag given, default is mixed)"
+				printh $nick "Syntax: $::botnick TWITTER STATUS SHOW <msg id #> (Show a particular status update)"
+				printh $nick "Syntax: $::botnick TWITTER STATUS DELETE <msg id #> (Delete a tweet YOU sent)"
+				printh $nick "Syntax: $::botnick TWITTER STATUS REPLY <msg id #> <msg> (Link a tweet to a specific status ID)"
 		} else {
 			printh $nick "To see all available options, use: $::botnick TWITTER HELP ALL"
 		}
@@ -983,39 +985,81 @@ proc SB:proc_twitter {nick host handle chan arg} {
 		}
 
 		trend - trending - trends {
-			# Get the current top 10 trends
-			# BOT twitter (or tw) trends
-			set twhome [sbdget TWITTER:HOME]
-			if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
-			if ![string eq -nocase $chan $twhome] {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
+			switch -glob -- $l2 {
+				avail - available {
+					# Get the current available trending areas
+					# BOT twitter (or tw) trends available
+					set twhome [sbdget TWITTER:HOME]
+					if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
+					if ![string eq -nocase $chan $twhome] {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
 
-			# Use twitter:senddata process
-			if {[catch {twitter:senddata $handle $nick $twitter::trends_url} result]} {
-				print $nick "Trends fetch failed."
-				return 0
-			}
+					# Use twitter:senddata process
+					if {[catch {twitter:senddata $handle $nick $twitter::trends_url} result]} {
+						print $nick "Trends fetch faild."
+						return 0
+					}
 
-			set trending [list $result]
+					set trending [lreverse $result]
+					zero x
 
-			foreach t $trending {
-				set trends [dict get $t trends]
+					foreach t $trending {
+						set country [dict get $t country]
+						set woeid [dict get $t woeid]
+						set code [dict get $t countryCode]
+						set name [dict get $t name]
 
-				# Format time Mon, 19 Oct 2009 07:50:48 +0000 into an integer 
-				# converts it to Sat, May 26, 2007 @ 12:45 pm GMT
-				# Taking in consideration for 8.4 backwards compatibility
-				set asof [clock format [clock scan [lreplace [split [dict get $t as_of]] 5 5] -gmt true] -format "%a, %b %d, %Y @ %r %Z"]
-				zero x
+						print $nick "[incr x]. Name: $name Country: $country ($code) WOEID: $woeid"
+					}
+					print $nick "To find what's trending in that location, use $::botnick TWITTER TRENDS <WOEID>"
 
-				foreach a $trends {
-					set name [dict get $a name]
-					set url [dict get $a url]
-
-					print $nick "[incr x]. $name - $url"
+					return 0
 				}
 
-				print $nick "Last update: $asof"
+				default {
+					# Get the current top 10 trends for world or location
+					# BOT twitter (or tw) trends
+					set twhome [sbdget TWITTER:HOME]
+					if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
+					if ![string eq -nocase $chan $twhome] {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
+
+					# Use twitter:senddata process
+					if {[isempty 2]} {
+						set l2 1
+						if {[catch {twitter:senddata $handle $nick "${twitter::trends_woeid_url}${l2}.json"} result]} {
+							print $nick "Trends fetch failed."
+							return 0
+						}
+					} else {
+						if {[catch {twitter:senddata $handle $nick "${twitter::trends_woeid_url}${2}.json"} result]} {
+							print $nick "Trends fetch failed."
+							return 0
+						}
+					}
+
+					set trending [lreverse $result]
+					foreach t $trending {
+						set trends [dict get $t trends]
+
+						# Format time Mon, 19 Oct 2009 07:50:48 +0000 into an integer < no longer valid, Twitter changed their datetime format
+						# to %Y-%m-%dT%H:%M:%SZ
+						# > Demonicpagan: % clock format [clock scan 2011-10-14T15:34:40Z -format "%Y-%m-%dT%H:%M:%SZ" -timezone UTC] -format "%a, %B %d, %Y @%l:%M GMT" -timezone GMT
+						# converts it to Sat, May 26, 2007 @ 12:45 pm GMT
+						# Taking in consideration for 8.4 backwards compatibility
+						set asof [clock format [clock scan [dict get $t as_of] -format "%Y-%m-%dT%H:%M:%SZ" -timezone UTC] -format "%a, %b %d, %Y @ %r %Z"]
+						zero x
+
+						foreach a $trends {
+							set name [dict get $a name]
+							set url [dict get $a url]
+
+							print $nick "[incr x]. $name - $url"
+						}
+
+						print $nick "Last update: $asof"
+					}
+					return 0
+				}
 			}
-			return 0
 		}
 
 		list - lists {
