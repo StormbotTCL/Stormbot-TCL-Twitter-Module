@@ -16,6 +16,14 @@ You can always get the latest source from <http://github.com/demonicpagan/Stormb
 
 Changelog - Dates are in Epoch time
 -----------------------------------
+1355264993
+
+*	Updated the API call to delete tweets
+*	Fixed timeline retrieval
+*	Due to permission changes, in order to access your direct messages, you will need to reauthorize the application. This means using the REQTOKEN and ACCTOKEN again.
+*	Removed the command BLOCK CHECK due to it being removed from v1.1 of the Twitter API
+*	Updated URLs for v1.1 of the Twitter API
+
 1318634315
 
 *	Updated the twitter trends api calls, they depreciated the method I was using

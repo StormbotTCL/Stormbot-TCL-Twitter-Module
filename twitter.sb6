@@ -97,12 +97,15 @@ proc oauth:query_call {url method params {sign_params {}} {token_secret {}}} {
 proc oauth:query {url method oauth_header {query {}}} {
 	set header [list Authorization [concat "OAuth" $oauth_header]]
 #msghome URL($url)
-	set token [http::geturl $url -headers $header -query $query -method $method -timeout $oauth::timeout]
+#msghome METHOD($method)
+	if {[string eq "GET" $method]} {
+		set token [http::geturl $url -headers $header -method $method -timeout $oauth::timeout]
+	} else {
+		set token [http::geturl $url -headers $header -query $query -method $method -timeout $oauth::timeout]
+	}
 	set data [http::data $token]
-#msghome DATA($data)
 #dumpfile result.json $data
 	set ncode [http::ncode $token]
-#msghome NCODE($ncode)
 	http::cleanup $token
 
 	if [string eq 401 $ncode] {error "$result. (code: $ncode)"; return 0}
@@ -182,31 +185,46 @@ namespace eval twitter {
 	variable oauth_token_secret
 
 	# Twitter API URLs
-	variable status_url "http://api.twitter.com/1/statuses/update.json" ; # POST
-	variable status_del_url "http://api.twitter.com/1/statuses/destroy.json" ; # POST destroy.json?id=123
-	variable home_url "http://api.twitter.com/1/statuses/home_timeline.json" ; # GET home_timeline.json?since_id=12345
-	variable ment_url "http://api.twitter.com/1/statuses/mentions.json" ; # GET mentions.json?since_id=12345
-	variable dmsg_send_url "http://api.twitter.com/1/direct_messages/new.json" ; # POST new.json?user=noradio&text=test text
-	variable dmsg_list_url "http://api.twitter.com/1/direct_messages.json" ; # GET
-	variable dmsg_del_url "http://api.twitter.com/1/direct_messages/destroy.json" ; # POST destroy.json?id=12345
-	variable trends_url "http://api.twitter.com/1/trends/available.json" ; # GET
-	variable trends_woeid_url "http://api.twitter.com/1/trends/" ; # GET
-	variable follow_url "http://api.twitter.com/1/friendships/create/twitterapi.json" ; # POST twitterapi.json?screen_name=noradio
-	variable unfollow_url "http://api.twitter.com/1/friendships/destroy.json" ; # POST destroy.json?screen_name=noradio
-	variable search_usr_url "http://api.twitter.com/1/users/search.json" ; # GET search.json?q=noradio
-	variable rate_limit_url "http://api.twitter.com/1/account/rate_limit_status.json" ; # GET
-	variable update_pro_url "http://api.twitter.com/1/account/update_profile.json" ; # POST
-	variable show_pro_url "http://api.twitter.com/1/users/show.json" ; # GET show.json?screen_name=noradio
-	variable block_add_url "http://api.twitter.com/1/blocks/create.json" ; # POST create.json?screen_name=noradio
-	variable block_del_url "http://api.twitter.com/1/blocks/destroy.json" ; # POST destroy.json?screen_name=noradio
-	variable block_chk_url "http://api.twitter.com/1/blocks/exists.json" ; # GET exists.json?screen_name=noradio
-	variable block_list_url "http://api.twitter.com/1/blocks/blocking.json" ; # GET
-	variable fav_list_url "http://api.twitter.com/1/favorites.json" ; # GET
-	variable fav_add_url "http://api.twitter.com/1/favorites/create/" ; # POST id.json where id is the message id
-	variable fav_del_url "http://api.twitter.com/1/favorites/destroy/" ; # POST id.json where id is the message id
-	variable retweet_url "http://api.twitter.com/1/statuses/retweet/" ; # POST id.json where id is the message id
-	variable status_show_url "http://api.twitter.com/1/statuses/show.json" ; # GET id.json where id is the message id
+	# Timeline
+	variable home_url "http://api.twitter.com/1.1/statuses/home_timeline.json" ; # GET home_timeline.json?since_id=12345
+	variable ment_url "http://api.twitter.com/1.1/statuses/mentions_timeline.json" ; # GET mentions.json?since_id=12345
+
+	# Tweets
+	variable retweet_url "http://api.twitter.com/1.1/statuses/retweet/" ; # POST id.json where id is the message id
+	variable status_show_url "http://api.twitter.com/1.1/statuses/show.json" ; # GET id.json where id is the message id
+	variable status_del_url "http://api.twitter.com/1.1/statuses/destroy/" ; # POST destroy.json?id=123
+	variable status_url "http://api.twitter.com/1.1/statuses/update.json" ; # POST
+
+	# Search
 	variable search_url "http://search.twitter.com/search.json" ; # GET search.json?q=@noradio
+
+	# Direct Messages
+	variable dmsg_list_url "http://api.twitter.com/1.1/direct_messages.json" ; # GET
+	variable dmsg_del_url "http://api.twitter.com/1.1/direct_messages/destroy.json" ; # POST destroy.json?id=12345
+	variable dmsg_send_url "http://api.twitter.com/1.1/direct_messages/new.json" ; # POST new.json?user=noradio&text=test text
+
+	# Friends & Followers
+	variable follow_url "http://api.twitter.com/1.1/friendships/create/create.json" ; # POST twitterapi.json?screen_name=noradio
+	variable unfollow_url "http://api.twitter.com/1.1/friendships/destroy.json" ; # POST destroy.json?screen_name=noradio
+
+	# Users
+	variable update_pro_url "http://api.twitter.com/1.1/account/update_profile.json" ; # POST
+	variable block_list_url "http://api.twitter.com/1.1/blocks/list.json" ; # GET
+	variable block_add_url "http://api.twitter.com/1.1/blocks/create.json" ; # POST create.json?screen_name=noradio
+	variable block_del_url "http://api.twitter.com/1.1/blocks/destroy.json" ; # POST destroy.json?screen_name=noradio
+
+	variable trends_url "http://api.twitter.com/1.1/trends/available.json" ; # GET
+	variable trends_woeid_url "http://api.twitter.com/1.1/trends/" ; # GET
+
+	variable search_usr_url "http://api.twitter.com/1.1/users/search.json" ; # GET search.json?q=noradio
+	variable rate_limit_url "http://api.twitter.com/1.1/application/rate_limit_status.json" ; # GET
+
+	variable show_pro_url "http://api.twitter.com/1.1/users/show.json" ; # GET show.json?screen_name=noradio
+	#variable block_chk_url "http://api.twitter.com/1.1/blocks/exists.json" ; # GET exists.json?screen_name=noradio
+
+	variable fav_list_url "http://api.twitter.com/1.1/favorites/list.json" ; # GET
+	variable fav_add_url "http://api.twitter.com/1.1/favorites/create.json" ; # POST id.json where id is the message id
+	variable fav_del_url "http://api.twitter.com/1.1/favorites/destroy.json" ; # POST id.json where id is the message id
 }
 
 proc SB:proc_twitter {nick host handle chan arg} {
@@ -248,7 +266,7 @@ proc SB:proc_twitter {nick host handle chan arg} {
 				printh $nick "Syntax: $::botnick TWITTER DISPLAY <off/on> (Display the readable name of twitter user)"
 				printh $nick "Syntax: $::botnick TWITTER RATELIMIT (Display the rate limit status of your account)"
 				printh $nick "Syntax: $::botnick TWITTER SHORTENLEN <number> (Set the length of url's that will be shortened. 12-20 recommended)"
-				printh $nick "Syntax: $::botnick TWITTER SHORTENER <option> (0=is.gd, 1=moourl.com, 2=bit.ly, 3=cli.gs)"
+				printh $nick "Syntax: $::botnick TWITTER SHORTENER <option> (0=is.gd, 1=moourl.com, 2=bit.ly, 3=cli.gs, 4=shar.es)"
 				printh $nick "Syntax: $::botnick TWITTER BITLYUN (Your bit.ly account username)"
 				printh $nick "Syntax: $::botnick TWITTER BITLYAPI (Your bit.ly account API key)"
 				printh $nick "Syntax: $::botnick TWITTER SETUSERNAME <username> (Set your username - useful if you want messages to stand out that are sent to you)"
@@ -268,7 +286,7 @@ proc SB:proc_twitter {nick host handle chan arg} {
 				printh $nick "Syntax: $::botnick TWITTER DIRECT DEL <msg id #> (deletes a direct message)"
 				printh $nick "Syntax: $::botnick TWITTER BLOCK ADD <screen name> (Add someone to the block list)"
 				printh $nick "Syntax: $::botnick TWITTER BLOCK DEL <screen name> (Remove someone from the block list)"
-				printh $nick "Syntax: $::botnick TWITTER BLOCK CHECK <screen name> (Check to see if someone is on your block list)"
+				#printh $nick "Syntax: $::botnick TWITTER BLOCK CHECK <screen name> (Check to see if someone is on your block list)"
 				printh $nick "Syntax: $::botnick TWITTER BLOCK LIST (List your blocked people)"
 				printh $nick "Syntax: $::botnick TWITTER TRENDS <1|woeid #> (Displays the current top 10 trending topics with the search URL for location specified, if none or 1, then shows world trends)"
 				printh $nick "Syntax: $::botnick TWITTER AVAILABLE (Displays trend data for available locations)"
@@ -419,7 +437,7 @@ proc SB:proc_twitter {nick host handle chan arg} {
 
 		shrtnr - shortener {
 			#Choice of URL/Link shortener
-			# 0=is.gd, 1=moourl.com, 2=bit.ly, 3=cli.gs
+			# 0=is.gd, 1=moourl.com, 2=bit.ly, 3=cli.gs, 4=shar.es
 			set twhome [sbdget TWITTER:HOME]
 			if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
 			if ![string eq -nocase $chan $twhome] {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
@@ -689,9 +707,12 @@ proc SB:proc_twitter {nick host handle chan arg} {
 					if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
 					if ![string eq -nocase $chan $twhome] {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
 
+					set mid [getdata $handle since_message_id]
+					if [isempty mid] { set mid 1 }
+
 					# Use twitter:senddata process
-					if {[catch {twitter:senddata $handle $nick $twitter::dmsg_list_url} result]} {
-						print $nick "Message retrieval failed."
+					if {[catch {twitter:senddata $handle $nick $twitter::dmsg_list_url [list since_id $mid count 10] GET} result]} {
+						print $nick "Message retrieval failed. ($result)"
 						return 0
 					}
 
@@ -707,8 +728,10 @@ proc SB:proc_twitter {nick host handle chan arg} {
 						set name [dict get $senderinfo name]
 
 						print $nick "[incr x]. From $name ($sender) sent: $text ($sent)(Msg ID: $id)"
+						setdata $handle since_message_id $id
 					}
 
+					save
 					return 0
 				}
 
@@ -787,29 +810,29 @@ proc SB:proc_twitter {nick host handle chan arg} {
 					return 0
 				}
 
-				chk - check {
-					# Check to see if someone is on the block list
-					set twhome [sbdget TWITTER:HOME]
-					if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
-					if ![string eq -nocase $chan $twhome] {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
+				# chk - check {
+					# # Check to see if someone is on the block list
+					# set twhome [sbdget TWITTER:HOME]
+					# if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
+					# if ![string eq -nocase $chan $twhome] {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
 
-					set url ${twitter::block_chk_url}?[http::formatQuery screen_name $3]
+					# set url ${twitter::block_chk_url}?[http::formatQuery screen_name $3]
 
-					# Use twitter:senddata process
-					if {[catch {twitter:senddata $handle $nick $url [list screen_name $3] GET} result]} {
-						print $nick "You are not blocking this user, $3."
-						return 0
-					}
+					# # Use twitter:senddata process
+					# if {[catch {twitter:senddata $handle $nick $url [list screen_name $3] GET} result]} {
+						# print $nick "You are not blocking this user, $3."
+						# return 0
+					# }
 
-					set nfo [list $result]
-					foreach a $nfo {
-						set id [dict get $a id]
-						set sname [dict get $a screen_name]
-					}
+					# set nfo [list $result]
+					# foreach a $nfo {
+						# set id [dict get $a id]
+						# set sname [dict get $a screen_name]
+					# }
 
-					print $nick "You are currently blocking [stu $sname] ($id)"
-					return 0
-				}
+					# print $nick "You are currently blocking [stu $sname] ($id)"
+					# return 0
+				# }
 
 				lst - list {
 					# List your blocked users
@@ -823,14 +846,20 @@ proc SB:proc_twitter {nick host handle chan arg} {
 						return 0
 					}
 
-					set nfo [lreverse $result]
+					set nfo [list $result]
 					zero x
 					foreach a $nfo {
-						set id [dict get $a id]
-						set sname [dict get $a screen_name]
-						set name [dict get $a name]
+						set users [dict get $a users]
+						set prev_cursor [dict get $a previous_cursor_str]
+						set next_cursor [dict get $a next_cursor_str]
 
-						print $nick "[incr x]. $sname ($name) - ID: $id"
+						foreach u $users {
+							set id [dict get $u id]
+							set sname [dict get $u screen_name]
+							set name [dict get $u name]
+
+							print $nick "[incr x]. $sname ($name) - ID: $id"
+						}
 					}
 					return 0
 				}
@@ -848,8 +877,8 @@ proc SB:proc_twitter {nick host handle chan arg} {
 			if [isempty twfreply] { set twfreply 1 }
 
 			# Use twitter:senddata process
-			if {[catch {twitter:senddata $handle $nick $twitter::home_url [list since_reply $twfreply count 10] GET} result]} {
-				print $nick "Retrieval error. ($result)"
+			if {[catch {twitter:senddata $handle $nick $twitter::home_url [list since_id $twfreply count 10] GET} result]} {
+				print $nick "Retrieval error. $result"
 				return 0
 			}
 
@@ -1067,12 +1096,12 @@ proc SB:proc_twitter {nick host handle chan arg} {
 			switch -exact -- $l2 {
 				create {
 					# Create a list - accounts limited to 20 lists
-					# http://api.twitter.com/1/user/lists.format
+					# http://api.twitter.com/1.1/user/lists.format
 					return 0
 				}
 
 				update {
-					# http://api.twitter.com/1/user/lists/id.format - id = name of list
+					# http://api.twitter.com/1.1/user/lists/id.format - id = name of list
 					return 0
 				}
 			}
@@ -1200,7 +1229,7 @@ proc SB:proc_twitter {nick host handle chan arg} {
 					if ![string eq -nocase $chan $twhome] {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
 
 					# Use twitter:senddata process
-					if {[catch {twitter:senddata $handle $nick "${twitter::fav_add_url}${3}.json" {} POST} result]} {
+					if {[catch {twitter:senddata $handle $nick $twitter::fav_add_url [list id $3] POST} result]} {
 						print $nick "That tweet ID is already favorited!"
 						return 0
 					}
@@ -1221,7 +1250,7 @@ proc SB:proc_twitter {nick host handle chan arg} {
 					if ![string eq -nocase $chan $twhome] {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
 
 					# Use twitter:senddata process
-					if {[catch {twitter:senddata $handle $nick "${twitter::fav_del_url}${3}.json" {} POST} result]} {
+					if {[catch {twitter:senddata $handle $nick $twitter::fav_del_url [list id $3] POST} result]} {
 						print $nick "Tweet ID doesn't exist in your favorites!"
 						return 0
 					}
@@ -1296,7 +1325,7 @@ proc SB:proc_twitter {nick host handle chan arg} {
 					if ![string eq -nocase $chan $twhome] {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
 
 					# Use twitter:senddata process
-					if {[catch {twitter:senddata $handle $nick $twitter::status_del_url [list id $3]} result]} {
+					if {[catch {twitter:senddata $handle $nick "${twitter::status_del_url}${3}.json" {} POST} result]} {
 						print $nick "Unable to delete tweet (does it exist?)"
 						return 0
 					}
@@ -1550,7 +1579,7 @@ proc twitter:converttime date {
 }
 
 proc twitter:shorten {url type} {
-	# 0=is.gd, 1=moourl.com, 2=bit.ly, 3=cli.gs
+	# 0=is.gd, 1=moourl.com, 2=bit.ly, 3=cli.gs, 4=shar.es
 	# moourl.com is unavalable until they release an api
 	set agent "User Agent: Mozilla/5.0 (Windows; U; Windows NT 6.0; en-US; rv:1.9.2.3) Gecko/20100401 Firefox/3.6.3 GTB7.0 ( .NET CLR 3.5.30729)"
 	set www [::http::config -useragent $agent -urlencoding "utf-8"]
