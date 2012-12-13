@@ -7,7 +7,7 @@
 
 SB:command add TWITTER 1 -none TW
 SB:register variable global TWITTER:*
-sbd:set twitter:author "Dustin Shea (demonicpagan@gmail.com)"
+sbd:set twitter:author "Dustin Lennon (demonicpagan@gmail.com)"
 
 # Make sure the require packages are installed
 empty package_failed
@@ -127,7 +127,7 @@ proc oauth:query {url method oauth_header {query {}}} {
 # take a dict of params and create as follows:
 # create string as: key="value",...,key2="value2"
 proc oauth:oauth_header {params} {
-	set header []
+	set header {}
 	foreach key [dict keys $params] {
 		set header "${header}[oauth:uri_escape $key]=\"[oauth:uri_escape [dict get $params $key]]\","
 	}
@@ -255,14 +255,14 @@ proc SB:proc_twitter {nick host handle chan arg} {
 		printh $nick ""
 		if [string eq ALL $u2] {
 			if [SB:checkaccess [sbd:get USERLEVEL:BOTOWNER] $handle] {
-				printh $nick "\002 Storing your Twitter credentials/Locking Channel\002"
+				printh $nick "\002Storing your Twitter credentials/Locking Channel\002"
 				printh $nick "/msg $::botnick TWITTER SETKEY <consumer key>"
 				printh $nick "/msg $::botnick TWITTER SETSECRET <consumer secret>"
 				printh $nick "These are obtained by registering the bot as an app at: https://twitter.com/apps"
 				printh $nick ""
 				printh $nick "Syntax: $::botnick TWITTER RESTRICT <channel> (Only use twitter in this channel, must have 1000 access on the bot to set) - MUST BE SET!."
 			}
-				printh $nick "\002 Client Option\002"
+				printh $nick "\002Client Option\002"
 				printh $nick "Syntax: $::botnick TWITTER DISPLAY <off/on> (Display the readable name of twitter user)"
 				printh $nick "Syntax: $::botnick TWITTER RATELIMIT (Display the rate limit status of your account)"
 				printh $nick "Syntax: $::botnick TWITTER SHORTENLEN <number> (Set the length of url's that will be shortened. 12-20 recommended)"
@@ -271,7 +271,7 @@ proc SB:proc_twitter {nick host handle chan arg} {
 				printh $nick "Syntax: $::botnick TWITTER BITLYAPI (Your bit.ly account API key)"
 				printh $nick "Syntax: $::botnick TWITTER SETUSERNAME <username> (Set your username - useful if you want messages to stand out that are sent to you)"
 				printh $nick ""
-				printh $nick "\002 Client commands\002"
+				printh $nick "\002Client commands\002"
 				printh $nick "Syntax: $::botnick TWITTER REQTOKEN (Request your oAuth token)"
 				printh $nick "Syntax: $::botnick TWITTER ACCTOKEN <oauth token> <oauth token secret> <PIN from authentication url of $::botnick TWITTER REQTOKEN> (Use your token)"
 				printh $nick "Syntax: $::botnick TWITTER <message text> (Send a status update to twitter - 140 Char limit)"
@@ -307,6 +307,9 @@ proc SB:proc_twitter {nick host handle chan arg} {
 		printh $nick ""
 		printh $nick "NOTICE: If your tweet, direct message, retweet contains a URL and you go over the 140 character limit, use a url shortener"
 		printh $nick "like tinyurl.com, bit.ly, moourl.com, is.gd, or any other url shortener that you know of and resubmit your tweet."
+		printh $nick ""
+		printh $nick "Before even using this command, you must FIRST run $::botnick TWITTER SETKEY <consumer key> and then $::botnick TWITTER <consumer secret>"
+		printh $nick "Use $::botnick TWITTER HELP ALL to see what these commands do."
 
 		if [notempty package_failed] {
 			printh $nick ""

@@ -16,6 +16,12 @@ You can always get the latest source from <http://github.com/demonicpagan/Stormb
 
 Changelog - Dates are in Epoch time
 -----------------------------------
+1355365707
+
+*	Updated the sbd:set twitter:author line to read "Dustin Lennon (demonicpagan@gmail.com)" instead of "Dustin Shea (demonicpagan@gmail.com)"
+*	Updated help to let first time users of the command know they need to run a couple specific commands before the command can be used.
+*	Fixed a syntax error in the code.
+
 1355264993
 
 *	Updated the API call to delete tweets
