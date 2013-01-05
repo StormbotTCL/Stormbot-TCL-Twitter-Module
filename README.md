@@ -16,6 +16,13 @@ You can always get the latest source from <http://github.com/demonicpagan/Stormb
 
 Changelog - Dates are in Epoch time
 -----------------------------------
+1357418923
+
+*	Changed the storage location of the consumer key and consumer secret IDs. This means you will have to run the /msg Botname TWITTER SETKEY <consumer key> and 
+/msg Botname TWITTER SETSECRET <consumer secret> commands again to restore the values.
+*	Moved the "Display the readable name of twitter user" configuration setting to the user file where it should be, not a global setting for all users.
+*	If /msg Botname TWITTER SETKEY or /msg Botnname TWITTER SETSECRET have nothing after them, they will return in private the two keys that are stored if any.
+
 1355365707
 
 *	Updated the sbd:set twitter:author line to read "Dustin Lennon (demonicpagan@gmail.com)" instead of "Dustin Shea (demonicpagan@gmail.com)"

@@ -231,7 +231,7 @@ proc SB:proc_twitter {nick host handle chan arg} {
 	set package_failed [sbdget TWITTER:PACKAGE_FAIL]
 	SB:setvariables
 
-	set disp [sbdget TWITTER:DISP]
+	set disp [getdata $handle TWITTERDISP]
 	if [isempty disp] {zero disp}
 
 	# Set $DCCOKAY to 0 (only allow /MSG commands), or 1 (/MSG & .DCC are okay).
@@ -323,29 +323,39 @@ proc SB:proc_twitter {nick host handle chan arg} {
 	switch -glob -- $l1 {
 
 		ky - key - consumerkey - setky - setkey - setconsumerkey {
-			if $dccokay {
-				if [sbd:equal -nocase @LAST_TRIGGER PUB] {printh $nick "You may not use this command in channel, for security purposes. Use either /MSG or .DCC to use this command."; return 0}
-			} else {
-				if ![sbd:equal -nocase @LAST_TRIGGER MSG] {printh $nick "You may only use this command in /MSG format for security purposes."; return 0}
-			}
+			if ![string eq "" $2] {
+				if $dccokay {
+					if [sbd:equal -nocase @LAST_TRIGGER PUB] {printh $nick "You may not use this command in channel, for security purposes. Use either /MSG or .DCC to use this command."; return 0}
+				} else {
+					if ![sbd:equal -nocase @LAST_TRIGGER MSG] {printh $nick "You may only use this command in /MSG format for security purposes."; return 0}
+				}
 
-			sbdset TWITTER:CONSUMER_KEY $2
-			SB:botdatafile write
-			print $nick "Your TWITTER API Consumer Key has been saved."
-			return 0
+				setdata $handle CONSUMER_KEY $2
+				save
+				print $nick "Your TWITTER API Consumer Key has been saved."
+				return 0
+			} else {
+				noprint $nick "Current CONSUMER KEY: [getdata $handle CONSUMER_KEY]"
+				return 0
+			}
 		}
 
 		secret - consumersecret - setsecret - setconsumersecret {
-			if $dccokay {
-				if [sbd:equal -nocase @LAST_TRIGGER PUB] {printh $nick "You may not use this command in channel, for security purposes. Use either /MSG or .DCC to use this command."; return 0}
-			} else {
-				if ![sbd:equal -nocase @LAST_TRIGGER MSG] {printh $nick "You may only use this command in /MSG format for security purposes."; return 0}
-			}
+			if ![string eq "" $2] {
+				if $dccokay {
+					if [sbd:equal -nocase @LAST_TRIGGER PUB] {printh $nick "You may not use this command in channel, for security purposes. Use either /MSG or .DCC to use this command."; return 0}
+				} else {
+					if ![sbd:equal -nocase @LAST_TRIGGER MSG] {printh $nick "You may only use this command in /MSG format for security purposes."; return 0}
+				}
 
-			sbdset TWITTER:CONSUMER_SECRET $2
-			SB:botdatafile write
-			print $nick "Your TWITTER API Consumer Secret has been saved."
-			return 0
+				setdata $handle CONSUMER_SECRET $2
+				save
+				print $nick "Your TWITTER API Consumer Secret has been saved."
+				return 0
+			} else {
+				noprint $nick "Current CONSUMER SECRET: [getdata $handle CONSUMER_SECRET]"
+				return 0
+			}
 		}
 
 		lc - lock* - chan - rest* {
@@ -384,8 +394,8 @@ proc SB:proc_twitter {nick host handle chan arg} {
 			if [isempty 2] {print $nick "Current TWITTER USER DISPLAY status: [offon $offon]"; return 0}
 			set 2 [string is true $2]
 
-			sbdset TWITTER:DISP $2
-			SB:botdatafile write
+			setdata $handle TWITTERDISP $2
+			save
 			print $nick "Twitter user display is now: [stu [offon $2]]"
 			return 0
 		}
@@ -903,13 +913,13 @@ proc SB:proc_twitter {nick host handle chan arg} {
 				foreach {a b} [list \u2014 -- \u2019 ' \u2018 ' &#8212\\\; -- \u2013 -] {regsub -all $a $text $b text}
 
 				if {[getdata $handle TWNAME] == $uname} {
-					if {[sbdget TWITTER:DISP]} {
+					if {[getdata $handle TWITTERDISP]} {
 						print $nick "[color 13]\002$uname ($name)\002: $text (Posted: $date) via $source[color] (MSG ID: $id)"
 					} else {
 						print $nick "[color 13]\002$uname\002: $text (Posted: $date) via $source[color] (MSG ID: $id)"
 					}
 				} else {
-					if {[sbdget TWITTER:DISP]} {
+					if {[getdata $handle TWITTERDISP]} {
 						print $nick "\002$uname ($name)\002: $text (Posted: $date) via $source (MSG ID: $id)"
 					} else {
 						print $nick "\002$uname\002: $text (Posted: $date) via $source (MSG ID: $id)"
@@ -968,7 +978,7 @@ proc SB:proc_twitter {nick host handle chan arg} {
 						# Replace utf-8 entities that aren't covered by SB:convert_html_codes
 						foreach {a b} [list \u2014 -- \u2019 ' \u2018 ' &#8212\\\; -- \u2013 -] {regsub -all $a $text $b text}
 
-						if {[sbdget TWITTER:DISP]} {
+						if {[getdata $handle TWITTERDISP]} {
 							print $nick "[incr x]. \002$uname ($name)\002: $text (Posted: $date) via $source (MSG ID: $id)"
 						} else {
 							print $nick "[incr x]. \002$uname\002: $text (Posted: $date) via $source (MSG ID: $id)"
@@ -1299,13 +1309,13 @@ proc SB:proc_twitter {nick host handle chan arg} {
 						foreach {a b} [list \u2014 -- \u2019 ' \u2018 ' &#8212\\\; -- \u2013 -] {regsub -all $a $text $b text}
 
 						if {[getdata $handle TWNAME] == $uname} {
-							if {[sbdget TWITTER:DISP]} {
+							if {[getdata $handle TWITTERDISP]} {
 								print $nick "[incr x]. [color 13]$uname ($name): $text (Posted: $date) via $source[color] (MSG ID: $id)"
 							} else {
 								print $nick "[incr x]. [color 13]$uname: $text (Posted: $date) via $source[color] (MSG ID: $id)"
 							}
 						} else {
-							if {[sbdget TWITTER:DISP]} {
+							if {[getdata $handle TWITTERDISP]} {
 								print $nick "[incr x]. $uname ($name): $text (Posted: $date) via $source (MSG ID: $id)"
 							} else {
 								print $nick "[incr x]. $uname: $text (Posted: $date) via $source (MSG ID: $id)"
@@ -1411,13 +1421,13 @@ proc SB:proc_twitter {nick host handle chan arg} {
 						regexp -nocase -- {<a.+?>(.+?)</a>} $source all source
 
 						if {[getdata $handle TWNAME] == $uname} {
-							if {[sbdget TWITTER:DISP]} {
+							if {[getdata $handle TWITTERDISP]} {
 								print $nick "[color 13]$uname ($name): $text (Posted: $date) via $source[color] (MSG ID: $id) (REPLY-TO ID: $rpltoid)"
 							} else {
 								print $nick "[color 13]$uname: $text (Posted: $date) via $source[color] (MSG ID: $id) (REPLY-TO ID: $rpltoid)"
 							}
 						} else {
-							if {[sbdget TWITTER:DISP]} {
+							if {[getdata $handle TWITTERDISP]} {
 								print $nick "$uname ($name): $text (Posted: $date) via $source (MSG ID: $id) (REPLY-TO ID: $rpltoid)"
 							} else {
 								print $nick "$uname: $text (Posted: $date) via $source (MSG ID: $id) (REPLY-TO ID: $rpltoid)"
