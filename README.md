@@ -14,6 +14,9 @@ If you experience any issues please submit a bug report on
 
 You can always get the latest source from <http://github.com/demonicpagan/Stormbot-TCL-Twitter-Module> as well.
 
+Please read <https://github.com/demonicpagan/Stormbot-TCL-Twitter-Module/wiki> for instructions on how to set
+up your eggdrop bot to work with [Twitter] (http://twitter.com "Twitter")
+
 Changelog - Dates are in Epoch time
 -----------------------------------
 1357418923
