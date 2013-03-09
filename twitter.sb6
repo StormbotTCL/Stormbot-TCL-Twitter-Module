@@ -9,19 +9,12 @@ SB:command add TWITTER 1 -none TW
 SB:register variable global TWITTER:*
 sbd:set twitter:author "Dustin Lennon (demonicpagan@gmail.com)"
 
-# Make sure the require packages are installed
-empty package_failed
-foreach package [list base64 json http sha1] {
-	set error [catch {package require $package} shit]
-	if $error {lappend package_failed $package}
-}
-sbdset TWITTER:PACKAGE_FAIL $package_failed
-unset package_failed
+# Package check moved into PROCs ~ Mai
 
 # oAuth TCL library by horgh (www.summercat.com) for Twitter
 namespace eval oauth {
-	variable consumer_key [sbdget TWITTER:CONSUMER_KEY]
-	variable consumer_secret [sbdget TWITTER:CONSUMER_SECRET]
+	variable consumer_key ; # Do NOT define this with a value yet
+	variable consumer_secret ; # Do NOT define this with a value yet
 
 	variable request_token_url http://api.twitter.com/oauth/request_token
 	variable authorize_url https://api.twitter.com/oauth/authorize
@@ -29,6 +22,12 @@ namespace eval oauth {
 
 	# timeout for http requests (ms)
 	variable timeout 60000
+
+	proc consumer {handle} {
+		variable consumer_key [getdata $handle CONSUMER_KEY]
+		variable consumer_secret [getdata $handle CONSUMER_SECRET]
+		return 0
+	}
 }
 
 # first step
@@ -96,8 +95,7 @@ proc oauth:query_call {url method params {sign_params {}} {token_secret {}}} {
 # do http request with oauth header
 proc oauth:query {url method oauth_header {query {}}} {
 	set header [list Authorization [concat "OAuth" $oauth_header]]
-#msghome URL($url)
-#msghome METHOD($method)
+
 	if {[string eq "GET" $method]} {
 		set token [http::geturl $url -headers $header -method $method -timeout $oauth::timeout]
 	} else {
@@ -108,8 +106,9 @@ proc oauth:query {url method oauth_header {query {}}} {
 	set ncode [http::ncode $token]
 	http::cleanup $token
 
+	if [string eq -1 $ncode]  {error "Unknown error: $data"; return 0}
 	if [string eq 401 $ncode] {error "$result. (code: $ncode)"; return 0}
-	if {[string eq 403 $ncode] || [string eq 400 $ncode]} {
+	if {[string eq 400 $ncode] || [string eq 403 $ncode]} {
 		foreach x [list $data] {
 			set reason [split $x \"]
 			set reason [l7 $reason]
@@ -117,7 +116,6 @@ proc oauth:query {url method oauth_header {query {}}} {
 		error "$reason (code: $ncode)"; return 0
 	}
 	if [string eq 404 $ncode] {error "The page that is trying to be accessed cannot be found. (code: $ncode)"; return 0}
-	if [string eq -1 $ncode]  {error "Unknown error: $data"; return 0}
 	if [string eq 502 $ncode] {error "Twitter / Over capacity. (code: $ncode)"; return 0}
 	if [string eq 503 $ncode] {error "No available server to handle this request. (code: $ncode)"; return 0}
 
@@ -139,7 +137,7 @@ proc oauth:oauth_header {params} {
 # create string as key=value&key2=value2...
 # TODO: if key matches, sort by value
 proc oauth:params_signature {params} {
-	set str []
+	set str {}
 	foreach key [lsort [dict keys $params]] {
 		set str ${str}[oauth:uri_escape [list $key [dict get $params $key]]]&
 	}
@@ -173,7 +171,7 @@ proc oauth:uri_escape {str} {
 # convert replies from http query into dict
 # params of form key=value&key2=value2
 proc oauth:params_to_dict {params} {
-	set answer []
+	set answer {}
 	foreach pair [split $params &] {
 		dict set answer {*}[split $pair =]
 	}
@@ -228,8 +226,14 @@ namespace eval twitter {
 }
 
 proc SB:proc_twitter {nick host handle chan arg} {
-	set package_failed [sbdget TWITTER:PACKAGE_FAIL]
+	# Do this before investing any more CPU on the command ....
+	if ![sbd:nozero @TWITTER:PACKAGES_CHECKED] {
+		lassign [twitter:check_packages] a b
+		if [notempty b] { printh $nick "\[TWITTER\] Unable to run command (missing packages): [ajl $b]" ; return 0 }
+	}
+
 	SB:setvariables
+	oauth::consumer $handle
 
 	set disp [getdata $handle TWITTERDISP]
 	if [isempty disp] {zero disp}
@@ -249,22 +253,21 @@ proc SB:proc_twitter {nick host handle chan arg} {
 
 	# Help information
 	if [string eq -nocase HELP $1] {
-		printh $nick "\[TWITTER\]:"
-		printh $nick "This command will essentially turn your Stormbot eggdrop bot into a twitter client."
-		printh $nick "It is best to when using this command, place your bot in its own channel."
-		printh $nick ""
-		if [string eq ALL $u2] {
-			if [SB:checkaccess [sbd:get USERLEVEL:BOTOWNER] $handle] {
-				printh $nick "\002Storing your Twitter credentials/Locking Channel\002"
-				printh $nick "/msg $::botnick TWITTER SETKEY <consumer key>"
-				printh $nick "/msg $::botnick TWITTER SETSECRET <consumer secret>"
-				printh $nick "These are obtained by registering the bot as an app at: https://twitter.com/apps"
-				printh $nick ""
-				printh $nick "Syntax: $::botnick TWITTER RESTRICT <channel> (Only use twitter in this channel, must have 1000 access on the bot to set) - MUST BE SET!."
-			}
+		switch -exact -- $l2 {
+			all {
+				if [SB:checkaccess [sbd:get USERLEVEL:BOTOWNER] $handle] {
+					printh $nick "\002Storing your Twitter credentials/Locking Channel\002"
+					printh $nick "/msg $::botnick TWITTER SETKEY <consumer key>"
+					printh $nick "/msg $::botnick TWITTER SETSECRET <consumer secret>"
+					printh $nick "These are obtained by registering the bot as an app at: https://twitter.com/apps"
+					printh $nick ""
+					printh $nick "Syntax: $::botnick TWITTER RESTRICT <channel> (Only use twitter in this channel, must have 1000 access on the bot to set) - MUST BE SET!."
+				}
 				printh $nick "\002Client Option\002"
 				printh $nick "Syntax: $::botnick TWITTER DISPLAY <off/on> (Display the readable name of twitter user)"
-				printh $nick "Syntax: $::botnick TWITTER RATELIMIT (Display the rate limit status of your account)"
+				printh $nick "Syntax: $::botnick TWITTER RATELIMIT SEARCH (Display the rate limit status for the Search resource family)"
+				printh $nick "Syntax: $::botnick TWITTER RATELIMIT STATUSES (Display the rate limit status for the Statuses resource family)"
+				printh $nick "Syntax: $::botnick TWITTER RATELIMIT USERS (Display the rate limit status for the Users resource family)"
 				printh $nick "Syntax: $::botnick TWITTER SHORTENLEN <number> (Set the length of url's that will be shortened. 12-20 recommended)"
 				printh $nick "Syntax: $::botnick TWITTER SHORTENER <option> (0=is.gd, 1=moourl.com, 2=bit.ly, 3=cli.gs, 4=shar.es)"
 				printh $nick "Syntax: $::botnick TWITTER BITLYUN (Your bit.ly account username)"
@@ -300,27 +303,71 @@ proc SB:proc_twitter {nick host handle chan arg} {
 				printh $nick "Syntax: $::botnick TWITTER STATUS SHOW <msg id #> (Show a particular status update)"
 				printh $nick "Syntax: $::botnick TWITTER STATUS DELETE <msg id #> (Delete a tweet YOU sent)"
 				printh $nick "Syntax: $::botnick TWITTER STATUS REPLY <msg id #> <msg> (Link a tweet to a specific status ID)"
-		} else {
-			printh $nick "To see all available options, use: $::botnick TWITTER HELP ALL"
-		}
-
-		printh $nick ""
-		printh $nick "NOTICE: If your tweet, direct message, retweet contains a URL and you go over the 140 character limit, use a url shortener"
-		printh $nick "like tinyurl.com, bit.ly, moourl.com, is.gd, or any other url shortener that you know of and resubmit your tweet."
-		printh $nick ""
-		printh $nick "Before even using this command, you must FIRST run $::botnick TWITTER SETKEY <consumer key> and then $::botnick TWITTER <consumer secret>"
-		printh $nick "Use $::botnick TWITTER HELP ALL to see what these commands do."
-
-		if [notempty package_failed] {
-			printh $nick ""
-			printh $nick "I'm sorry, but I can't execute the TWITTER command: I'm missing some code packages ([ajl $package_failed]). Please have my owner install these packages so I can run this command."
+			}
+			how - howto {
+				printh $nick "\002How To:\002"
+				printh $nick "How to set up this bead to work with twitter"
+				printh $nick ""
+				printh $nick "\[Registering the app with Twitter\]"
+				printh $nick "1.) Have a registered Twitter account."
+				printh $nick "2.) Go to http://dev.twitter.com/apps"
+				printh $nick "3.) Sign in under your registered twitter account."
+				printh $nick "4.) Click on \"Register a new app\" button"
+				printh $nick "5.) Fill out the form"
+				printh $nick "\002Application Name\002: This must be a unique name with Twitter. If an application is already registered with a certain name, when you go to submit your application, you will be told so."
+				printh $nick "\002Description\002: Give a brief description of your application."
+				printh $nick "\002Application Website\002: Put in http://www.stormbot.net"
+				printh $nick "\002Organization\002: Put in Stormbot TCL"
+				printh $nick "\002Application Type\002: Client"
+				printh $nick "\002Default Access Type\002: Read, write, and direct messages"
+				printh $nick "6.) Enter the CAPTCHA and click \"Register Application\""
+				printh $nick ""
+				printh $nick "\[Initializing the bead\]"
+				printh $nick "1.) Take note of the \002Consumer Key\002 and \002Consumer Secret\002"
+				printh $nick "2.) Type /msg ${::botnick} TWITTER SETKEY <consumer key> and hit enter. You will replace <consumer key> with the consumer key you took note of after registering your application."
+				printh $nick "3.) Type /msg ${::botnick} TWITTER SETSECRET <consumer secret> and hit enter. You will replace <consumer secret> with the consumer secret you took note of after registering your application."
+				printh $nick ""
+				printh $nick "\[Requesting access to Twitter\]"
+				printh $nick "Before issuing the commands to request access to Twitter, I have required that you let the bot know what channel you are restricting Twitter commands to. This was done to deter Twitter spam in rooms it isn't wanted. Only the bot owner can set this command."
+				printh $nick "To restrict the bot to a particular room for Twitter usage, type ${::botnick} RESTRICT #channelname"
+				printh $nick ""
+				printh $nick "Linking the bead to Twitter:"
+				printh $nick "1.) Type ${::botnick} TWITTER REQTOKEN in the channel in which you set to restrict usage."
+				printh $nick "The output the bot gives you is a web link you must visit that provies you with a PIN you will need to use in the next command. Either write it down or copy it to the clipboard."
+				printh $nick "2.) Type ${::botnick} TWITTER ACCTOKEN <oauth token> <oauth token secret> <PIN from authentication url of BOT twitter reqtoken>"
+				printh $nick "The information provided by the bot with the previous command gives you the <oauth token> and <oauth token secret>. I suggest you copy what the bot outputs up to <PIN from authorization URL of ${::botnick} TWITTER REQTOKEN> and then append the PIN from the web site you had to visit to the end of the command and hit enter."
+				printh $nick ""
+				printh $nick "Congratulations! You have now set up this bead to work with your Twitter account. If you run into any bugs, please contact [sbdget twitter:author]."
+			}
+			default {
+				printh $nick "\[TWITTER\]:"
+				printh $nick "This command will essentially turn your Stormbot eggdrop bot into a twitter client."
+				printh $nick "It is best to when using this command, place your bot in its own channel."
+				printh $nick "To see all available options:"
+				printh $nick "$::botnick TWITTER HELP ALL"
+				#printh $nick "$::botnick TWITTER HELP HOWTO"
+				printh $nick ""
+				printh $nick "NOTICE: If your tweet, direct message, retweet contains a URL and you go over the 140 character limit, use a url shortener"
+				printh $nick "like tinyurl.com, bit.ly, moourl.com, is.gd, or any other url shortener that you know of and resubmit your tweet."
+				printh $nick ""
+				printh $nick "Before even using this command, you must FIRST run $::botnick TWITTER SETKEY <consumer key> and then $::botnick TWITTER <consumer secret>"
+				printh $nick "Use $::botnick TWITTER HELP ALL to see what these commands do."
+			}
 		}
 		return 0
 	}
 
-
-	if [notempty package_failed] {print $nick "I'm sorry, but I can't execute the TWITTER command: I'm missing some code packages ([ajl $package_failed]). Please have my owner install these packages so I can run this command."; return 0}
 	switch -glob -- $l1 {
+		test {
+			print $nick "\[${u0}\] Testing functions needed for $u0 to work:"
+			lassign [twitter:check_packages] ok bad
+			if [isempty bad] {
+				print $nick "\[${u0}\] All packages are available: [ajl $ok]"
+			} {
+				print $nick "\[${u0}\] Missing packages: [ajl $bad] ($u0 can't function without them!)"
+			}
+			return 0
+		}
 
 		ky - key - consumerkey - setky - setkey - setconsumerkey {
 			if ![string eq "" $2] {
@@ -405,33 +452,159 @@ proc SB:proc_twitter {nick host handle chan arg} {
 			if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
 			if ![string eq -nocase $chan $twhome] {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
 
-			# Use twitter:senddata process
-			if {[catch {twitter:senddata $handle $nick $twitter::rate_limit_url {} GET} result]} {
-				print $nick "Unable to retrieve your rate limit status. ($result)"
-				return 0
-			}
+			switch -glob -- $l2 {
+				search {
+					# Use twitter:senddata process
+					if {[catch {twitter:senddata $handle $nick $twitter::rate_limit_url [list resources search] GET} result]} {
+						print $nick "Unable to retrieve your rate limit status. ($result)"
+						return 0
+					}
 
-			if {[dict exists $result error]} {
-				print $nick "Error: [dict get $result error]"
-				return 0
-			}
+					if {[dict exists $result error]} {
+						print $nick "Error: [dict get $result error]"
+						return 0
+					}
 
-			set status [list $result]
+					set status [list $result]
 
-			foreach stat $status {
-				set remaining_hits [dict get $stat remaining_hits ]
-				set hourly_limit [dict get $stat hourly_limit]
-				set reset_time_sec [dict get $stat reset_time_in_seconds]
+					foreach stat $status {
+						set base [dict get $stat resources]
+						set search [dict get $base search]
+						set search_limits [dict get $search /search/tweets]
 
-				if {$remaining_hits > 0} {
-					print $nick "Status: All good, $remaining_hits/$hourly_limit requests left, Resets: [clock format $reset_time_sec -format "%l:%M %p"]"
+						foreach s [list $search_limits] {
+							set remaining [dict get $s remaining]
+							set limit [dict get $s limit]
+							set reset [dict get $s reset]
+						}
+
+						if {$remaining > 0} {
+							print $nick "\[Resource: /search/tweets\] Status: All good, $remaining/$limit requests left, Resets: [clock format $reset -format "%l:%M %p"]"
+							return 0
+						} else {
+							print $nick "\[Resource: /search/tweets\] Status: Rate limit exceeded, $remaining/$limit requests left, Resets: [clock format $reset -format "%l:%M %p"]"
+							return 0
+						}
+					}
+						return 0
+				}
+
+				statuses {
+					# Use twitter:senddata process
+					if {[catch {twitter:senddata $handle $nick ${twitter::rate_limit_url} [list resources statuses] GET} result]} {
+						print $nick "Unable to retrieve your rate limit status. ($result)"
+						return 0
+					}
+
+					if {[dict exists $result error]} {
+						print $nick "Error: [dict get $result error]"
+						return 0
+					}
+
+					set status [list $result]
+
+					foreach stat $status {
+						set base [dict get $stat resources]
+						set statuses [dict get $base statuses]
+						set mention_tl [dict get $statuses /statuses/mentions_timeline]
+						set show_id [dict get $statuses /statuses/show/:id]
+						set home_tl [dict get $statuses /statuses/home_timeline]
+
+						foreach m [list $mention_tl] {
+							set m_remaining [dict get $m remaining]
+							set m_limit [dict get $m limit]
+							set m_reset [dict get $m reset]
+						}
+
+						foreach sid [list $show_id] {
+							set sid_remaining [dict get $sid remaining]
+							set sid_limit [dict get $sid limit]
+							set sid_reset [dict get $sid reset]
+						}
+
+						foreach h [list $home_tl] {
+							set h_remaining [dict get $h remaining]
+							set h_limit [dict get $h limit]
+							set h_reset [dict get $h reset]
+						}
+
+						if {$m_remaining > 0} {
+							print $nick "\[Resource: /statuses/mentions_timeline\] Status: All good, $m_remaining/$m_limit requests left, Resets: [clock format $m_reset -format "%l:%M %p"]"
+						} else {
+							print $nick "\[Resource: /statuses/mentions_timeline\] Status: Rate limit exceeded, $m_remaining/$m_limit requests left, Resets: [clock format $m_reset -format "%l:%M %p"]"
+						}
+
+						if {$sid_remaining > 0} {
+							print $nick "\[Resource: /statuses/show/:id\] Status: All good, $sid_remaining/$sid_limit requests left, Resets: [clock format $sid_reset -format "%l:%M %p"]"
+						} else {
+							print $nick "\[Resource: /statuses/show/:id\] Status: Rate limit exceeded, $sid_remaining/$sid_limit requests left, Resets: [clock format $sid_reset -format "%l:%M %p"]"
+						}
+
+						if {$h_remaining > 0} {
+							print $nick "\[Resource: /statuses/home_timeline\] Status: All good, $h_remaining/$h_limit requests left, Resets: [clock format $h_reset -format "%l:%M %p"]"
+							return 0
+						} else {
+							print $nick "\[Resource: /statuses/home_timeline\] Status: Rate limit exceeded, $h_remaining/$h_limit requests left, Resets: [clock format $h_reset -format "%l:%M %p"]"
+							return 0
+						}
+					}
 					return 0
-				} else {
-					print $nick "Status: Rate limit exceeded, $remaining_hits/$hourly_limit requests left, Resets: [clock format $reset_time_sec -format "%l:%M %p"]"
+				}
+
+				users {
+					# Use twitter:senddata process
+					if {[catch {twitter:senddata $handle $nick ${twitter::rate_limit_url} [list resources users] GET} result]} {
+						print $nick "Unable to retrieve your rate limit status. ($result)"
+						return 0
+					}
+
+					if {[dict exists $result error]} {
+						print $nick "Error: [dict get $result error]"
+						return 0
+					}
+
+					set status [list $result]
+
+					foreach stat $status {
+						set base [dict get $stat resources]
+						set users [dict get $base users]
+						set uid [dict get $users /users/show/:id]
+						set u_search [dict get $users /users/search]
+
+						foreach u [list $uid] {
+							set u_remaining [dict get $u remaining]
+							set u_limit [dict get $u limit]
+							set u_reset [dict get $u reset]
+						}
+
+						foreach x [list $u_search] {
+							set x_remaining [dict get $x remaining]
+							set x_limit [dict get $x limit]
+							set x_reset [dict get $x reset]
+						}
+
+						if {$u_remaining > 0} {
+							print $nick "\[Resource: /users/show/:id\] Status: All good, $u_remaining/$u_limit requests left, Resets: [clock format $u_reset -format "%l:%M %p"]"
+						} else {
+							print $nick "\[Resource: /users/show/:id\] Status: Rate limit exceeded, $u_remaining/$u_limit requests left, Resets: [clock format $u_reset -format "%l:%M %p"]"
+						}
+
+						if {$x_remaining > 0} {
+							print $nick "\[Resource: /users/search\] Status: All good, $x_remaining/$x_limit requests left, Resets: [clock format $x_reset -format "%l:%M %p"]"
+							return 0
+						} else {
+							print $nick "\[Resource: /users/search\] Status: Rate limit exceeded, $x_remaining/$x_limit requests left, Resets: [clock format $x_reset -format "%l:%M %p"]"
+							return 0
+						}
+					}
+					return 0
+				}
+
+				default {
+					print $nick "Please specify either SEARCH, STATUSES, or USERS"
 					return 0
 				}
 			}
-			return 0
 		}
 
 		shrtn - shorten - shortenlen {
@@ -822,30 +995,6 @@ proc SB:proc_twitter {nick host handle chan arg} {
 					print $nick "You are now unblocking [stu $sname] ($id)"
 					return 0
 				}
-
-				# chk - check {
-					# # Check to see if someone is on the block list
-					# set twhome [sbdget TWITTER:HOME]
-					# if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
-					# if ![string eq -nocase $chan $twhome] {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
-
-					# set url ${twitter::block_chk_url}?[http::formatQuery screen_name $3]
-
-					# # Use twitter:senddata process
-					# if {[catch {twitter:senddata $handle $nick $url [list screen_name $3] GET} result]} {
-						# print $nick "You are not blocking this user, $3."
-						# return 0
-					# }
-
-					# set nfo [list $result]
-					# foreach a $nfo {
-						# set id [dict get $a id]
-						# set sname [dict get $a screen_name]
-					# }
-
-					# print $nick "You are currently blocking [stu $sname] ($id)"
-					# return 0
-				# }
 
 				lst - list {
 					# List your blocked users
@@ -1632,4 +1781,14 @@ proc twitter:shorten {url type} {
 	}
 
 	return $url
+}
+
+proc twitter:check_packages args {
+	# Make sure the require packages are installed
+	empty ok bad
+	foreach a [list base64 json http sha1] {
+		set error [ catch { package require $a } ]
+		if $error { lappend bad $a } { lappend ok $a }
+	}
+	return [list $ok $bad]
 }

@@ -19,6 +19,12 @@ up your eggdrop bot to work with [Twitter] (http://twitter.com "Twitter")
 
 Changelog - Dates are in Epoch time
 -----------------------------------
+1362828901
+
+*	After much headache, the consumer_key and consumer_secret have been moved over to the eggdrop user data file. Information that was stored globally for this has been removed from the global data file.
+*	Updated code dealing with displaying rate limits to coincide with v1.1 of the API
+*	Moved package checking into SB:proc_twitter for better and optimized processing.
+
 1357418923
 
 *	Changed the storage location of the consumer key and consumer secret IDs. This means you will have to run the /msg Botname TWITTER SETKEY <consumer key> and 
