@@ -105,7 +105,7 @@ proc oauth:query {url method oauth_header {query {}}} {
 #dumpfile result.json $data
 	set ncode [http::ncode $token]
 	http::cleanup $token
-
+#debug.vars #bothouse data ncode
 	if [string eq -1 $ncode]  {error "Unknown error: $data"; return 0}
 	if [string eq 401 $ncode] {error "$result. (code: $ncode)"; return 0}
 	if {[string eq 400 $ncode] || [string eq 403 $ncode]} {
@@ -116,6 +116,7 @@ proc oauth:query {url method oauth_header {query {}}} {
 		error "$reason (code: $ncode)"; return 0
 	}
 	if [string eq 404 $ncode] {error "The page that is trying to be accessed cannot be found. (code: $ncode)"; return 0}
+	if [string eq 429 $ncode] {error "Rate limit exceeded. (code: $ncode)"; return 0}
 	if [string eq 502 $ncode] {error "Twitter / Over capacity. (code: $ncode)"; return 0}
 	if [string eq 503 $ncode] {error "No available server to handle this request. (code: $ncode)"; return 0}
 
@@ -226,13 +227,144 @@ namespace eval twitter {
 }
 
 proc SB:proc_twitter {nick host handle chan arg} {
+	SB:setvariables
+
 	# Do this before investing any more CPU on the command ....
+	# Help information
+	if [string eq -nocase HELP $1] {
+		switch -exact -- $l2 {
+			all {
+				if [SB:checkaccess [sbd:get USERLEVEL:BOTOWNER] $handle] {
+					printh $nick "\002\037Storing your Twitter credentials / Locking Channel\037:\002"
+					printh $nick "/msg $::botnick TWITTER SETKEY <consumer key>"
+					printh $nick "/msg $::botnick TWITTER SETSECRET <consumer secret>"
+					printh $nick "These are obtained by registering the bot as an app at: https://twitter.com/apps"
+					printh $nick ""
+					printh $nick "Syntax: $::botnick TWITTER RESTRICT <channel> (Only use twitter in this channel, must have 1000 access on the bot to set) - MUST BE SET!."
+					printh $nick ""
+				}
+				printh $nick "\002\037Client Options\037:\002"
+				printh $nick "Syntax: $::botnick TWITTER DISPLAY <off/on> (Display the readable name of twitter user)"
+				printh $nick "Syntax: $::botnick TWITTER RATELIMIT SEARCH (Display the rate limit status for the Search resource family)"
+				printh $nick "Syntax: $::botnick TWITTER RATELIMIT STATUSES (Display the rate limit status for the Statuses resource family)"
+				printh $nick "Syntax: $::botnick TWITTER RATELIMIT USERS (Display the rate limit status for the Users resource family)"
+				printh $nick "Syntax: $::botnick TWITTER SHORTENLEN <number> (Set the length of url's that will be shortened. 12-20 recommended)"
+				printh $nick "Syntax: $::botnick TWITTER SHORTENER <option> (0=is.gd, 1=moourl.com, 2=bit.ly, 3=cli.gs, 4=shar.es)"
+				printh $nick "Syntax: $::botnick TWITTER BITLYUN (Your bit.ly account username)"
+				printh $nick "Syntax: $::botnick TWITTER BITLYAPI (Your bit.ly account API key)"
+				printh $nick "Syntax: $::botnick TWITTER SETUSERNAME <username> (Set your username - useful if you want messages to stand out that are sent to you)"
+				printh $nick ""
+				printh $nick "\002\037Client commands\037:\002"
+				printh $nick "Syntax: $::botnick TWITTER REQTOKEN (Request your oAuth token)"
+				printh $nick "Syntax: $::botnick TWITTER ACCTOKEN <oauth token> <oauth token secret> <PIN from authentication url of $::botnick TWITTER REQTOKEN> (Use your token)"
+				printh $nick "Syntax: $::botnick TWITTER <message text> (Send a status update to twitter - 140 Char limit)"
+				printh $nick "Syntax: $::botnick TWITTER FOLLOW <screen name> (Follow a twitter user - Can only be used in Twitter channel)"
+				printh $nick "Syntax: $::botnick TWITTER UNFOLLOW <screen name> (Unfollow a twitter user)"
+				printh $nick "Syntax: $::botnick TWITTER FRIENDS (Displays your public timeline that includes your friends' tweets - at most 20 results)"
+				printh $nick "Syntax: $::botnick TWITTER MENTIONS (Displays messages directed at you.)"
+				printh $nick "Syntax: $::botnick TWITTER MENTIONS CLEAR (Reset your mentions timeline so you can view again if you hadn't been mentioned since last viewing.)"
+				printh $nick "Syntax: $::botnick TWITTER RETWEET <id> (Retweet a message that you found interesting)"
+				printh $nick "Syntax: $::botnick TWITTER DIRECT SEND <name> <msg> (Send a direct message to a user - 140 Char limit)"
+				printh $nick "Syntax: $::botnick TWITTER DIRECT LIST (lists your direct messages and their id number)"
+				printh $nick "Syntax: $::botnick TWITTER DIRECT DEL <msg id #> (deletes a direct message)"
+				printh $nick "Syntax: $::botnick TWITTER BLOCK ADD <screen name> (Add someone to the block list)"
+				printh $nick "Syntax: $::botnick TWITTER BLOCK DEL <screen name> (Remove someone from the block list)"
+				printh $nick "Syntax: $::botnick TWITTER BLOCK LIST (List your blocked people)"
+				printh $nick "Syntax: $::botnick TWITTER TRENDS <1|woeid #> (Displays the current top 10 trending topics with the search URL for location specified, if none or 1, then shows world trends)"
+				printh $nick "Syntax: $::botnick TWITTER AVAILABLE (Displays trend data for available locations)"
+				printh $nick "Syntax: $::botnick TWITTER FAVORITES (Displays your favorited tweets)"
+				printh $nick "Syntax: $::botnick TWITTER FAVORITES ADD <msg id #> (Add a tweet to your favorites)"
+				printh $nick "Syntax: $::botnick TWITTER FAVORITES DEL <msg id #> (Remove a tweet from your favorites)"
+				printh $nick "Syntax: $::botnick TWITTER PROFILE VIEW <screen name> (View a users profile)"
+				printh $nick "Syntax: $::botnick TWITTER PROFILE SET <NAME|URL|LOCATION|DESCRIPTION> <attrib> (Set various profile attributes)"
+				printh $nick "Syntax: $::botnick TWITTER SEARCH USER <screen name> (Search for a profile - returns the first 5 results)"
+				printh $nick "Syntax: $::botnick TWITTER SEARCH TWEET <-mixed|-recent|-popular> <query> (Search for tweets, if no flag given, default is mixed)"
+				printh $nick "Syntax: $::botnick TWITTER STATUS SHOW <msg id #> (Show a particular status update)"
+				printh $nick "Syntax: $::botnick TWITTER STATUS DELETE <msg id #> (Delete a tweet YOU sent)"
+				printh $nick "Syntax: $::botnick TWITTER STATUS REPLY <msg id #> <msg> (Link a tweet to a specific status ID)"
+				return 0
+			}
+
+			how - how-to - howto {
+				printh $nick "\002How To:\002"
+				printh $nick "How to set up this bead to work with twitter"
+				printh $nick ""
+				printh $nick "\[Registering the app with Twitter\]"
+				printh $nick "1) Have a registered Twitter account."
+				printh $nick "2) Go to http://dev.twitter.com/apps"
+				printh $nick "3) Sign in under your registered twitter account."
+				printh $nick "4) Click on \"Register a new app\" button"
+				printh $nick "5) Fill out the form"
+				printh $nick "\002Application Name\002: This must be a unique name with Twitter. If an application is already registered with a certain name, when you go to submit your application, you will be told so."
+				printh $nick "\002Description\002: Give a brief description of your application."
+				printh $nick "\002Application Website\002: Put in http://www.stormbot.net"
+				printh $nick "\002Organization\002: Put in Stormbot TCL"
+				printh $nick "\002Application Type\002: Client"
+				printh $nick "\002Default Access Type\002: Read, write, and direct messages"
+				printh $nick "6) Enter the CAPTCHA and click \"Register Application\""
+				printh $nick ""
+				printh $nick "\[Initializing the bead\]"
+				printh $nick "7) Take note of the \002Consumer Key\002 and \002Consumer Secret\002"
+				printh $nick "8) Type \002/msg ${::botnick} TWITTER SETKEY <consumer key>\002 and hit enter. You will replace <consumer key> with the consumer key you took note of after registering your application."
+				printh $nick "9) Type \002/msg ${::botnick} TWITTER SETSECRET <consumer secret>\002 and hit enter. You will replace <consumer secret> with the consumer secret you took note of after registering your application."
+				printh $nick ""
+				printh $nick "\[Requesting access to Twitter\]"
+				printh $nick "Before issuing the commands to request access to Twitter, I have required that you let the bot know what channel you are restricting Twitter commands to. This was done to deter Twitter spam in rooms it isn't wanted. Only the bot owner can set this command."
+				printh $nick "To restrict the bot to a particular room for Twitter usage, type ${::botnick} RESTRICT #channelname"
+				printh $nick ""
+				printh $nick "Linking the bead to Twitter:"
+				printh $nick "10) \002${::botnick} TWITTER REQTOKEN\002 in the channel in which you set to restrict usage."
+				printh $nick "The output the bot gives you is a web link you must visit that provies you with a PIN you will need to use in the next command. Either write it down or copy it to the clipboard."
+				printh $nick "11) \002${::botnick} TWITTER ACCTOKEN <oauth token> <oauth token secret> <PIN from authentication url of BOT twitter reqtoken>\002"
+				printh $nick "The information provided by the bot with the previous command gives you the <oauth token> and <oauth token secret>. I suggest you copy what the bot outputs up to <PIN from authorization URL of ${::botnick} TWITTER REQTOKEN> and then append the PIN from the web site you had to visit to the end of the command and hit enter."
+				printh $nick ""
+				printh $nick "Congratulations! You have now set up this bead to work with your Twitter account. If you run into any bugs, please contact [sbdget twitter:author]."
+				return 0
+			}
+
+			1 - 1st - first - firstuse - first-use {
+				printh $nick "Before even using the $u0 command, you must do the following command sequence:"
+				printh $nick "$::botnick TWITTER TEST"
+				printh $nick "$::botnick TWITTER SETKEY <consumer key>"
+				printh $nick "$::botnick TWITTER SECRET <consumer secret>"
+				printh $nick ""
+				printh $nick "These are account-access keys that Twitter uses to allow you access to your account from the bot."
+				printh $nick "After that, to see a walk-through on the standard setup, do: $::botnick $u0 HELP HOWTO"
+				return 0
+			}
+
+			src - source {
+				printh $nick "Coder: [sbd:get TWITTER:AUTHOR]"
+				printh $nick "Source: http://github.com/demonicpagan/Stormbot-TCL-Twitter-Module"
+				return 0
+			}
+
+			default {
+				printh $nick "\[TWITTER\]:"
+				printh $nick "Syntax: $::botnick $u0 HELP"
+				printh $nick "This command will essentially turn your Stormbot eggdrop bot into a twitter client."
+				#printh $nick "It is best to when using this command, place your bot in its own channel."
+				printh $nick "To see all available options:"
+				printh $nick "$::botnick TWITTER HELP FIRST  \[one-time only: do this the first time you set up your bot for Twitter use\]"
+				printh $nick "$::botnick TWITTER HELP HOWTO  \[walk-through on setting your information up for Twitter account access & use\]"
+				printh $nick "$::botnick TWITTER HELP ALL    \[all possible commands and options\]"
+				printh $nick "$::botnick TWITTER HELP SOURCE \[GtiHub repository for original source code & coder contact\]"
+				printh $nick ""
+				printh $nick "NOTE: If your tweet / direct message / retweet contains a URL, use a URL-shortening service to keep your tweet from exceeding 140 characters ( examples: tinyurl.com , bit.ly , moourl.com , is.gd )."
+				printh $nick "\002[color 4]IMPORTANT: IF YOU INTEND TO KEEP YOUR TWITTER PRIVATE, THEN IT IS BEST YOU SEEK ALTERNATIVE METHODS OF VIEWING TWITTER[color]\002"
+				return 0
+			}
+		}
+		return 0
+	}
+
+	# Okay, now do all the CPU intensive stuff ....
+
 	if ![sbd:nozero @TWITTER:PACKAGES_CHECKED] {
 		lassign [twitter:check_packages] a b
 		if [notempty b] { printh $nick "\[TWITTER\] Unable to run command (missing packages): [ajl $b]" ; return 0 }
 	}
 
-	SB:setvariables
 	oauth::consumer $handle
 
 	set disp [getdata $handle TWITTERDISP]
@@ -249,112 +381,6 @@ proc SB:proc_twitter {nick host handle chan arg} {
 			if [string eq 8.4 $::tcl_version] {print $nick "\[TWITTER WARNING\] However, you can try compiling the DICT package for 8.4 found here, http://pascal.scheffers.net/software/tclDict-8.5.2.tar.gz -- I can't guarantee that after compiling that DICT package that this bead will work properly. If it doesn't, I'd suggest upgrading your TCL version."}
 			return 0
 		}
-	}
-
-	# Help information
-	if [string eq -nocase HELP $1] {
-		switch -exact -- $l2 {
-			all {
-				if [SB:checkaccess [sbd:get USERLEVEL:BOTOWNER] $handle] {
-					printh $nick "\002Storing your Twitter credentials/Locking Channel\002"
-					printh $nick "/msg $::botnick TWITTER SETKEY <consumer key>"
-					printh $nick "/msg $::botnick TWITTER SETSECRET <consumer secret>"
-					printh $nick "These are obtained by registering the bot as an app at: https://twitter.com/apps"
-					printh $nick ""
-					printh $nick "Syntax: $::botnick TWITTER RESTRICT <channel> (Only use twitter in this channel, must have 1000 access on the bot to set) - MUST BE SET!."
-				}
-				printh $nick "\002Client Option\002"
-				printh $nick "Syntax: $::botnick TWITTER DISPLAY <off/on> (Display the readable name of twitter user)"
-				printh $nick "Syntax: $::botnick TWITTER RATELIMIT SEARCH (Display the rate limit status for the Search resource family)"
-				printh $nick "Syntax: $::botnick TWITTER RATELIMIT STATUSES (Display the rate limit status for the Statuses resource family)"
-				printh $nick "Syntax: $::botnick TWITTER RATELIMIT USERS (Display the rate limit status for the Users resource family)"
-				printh $nick "Syntax: $::botnick TWITTER SHORTENLEN <number> (Set the length of url's that will be shortened. 12-20 recommended)"
-				printh $nick "Syntax: $::botnick TWITTER SHORTENER <option> (0=is.gd, 1=moourl.com, 2=bit.ly, 3=cli.gs, 4=shar.es)"
-				printh $nick "Syntax: $::botnick TWITTER BITLYUN (Your bit.ly account username)"
-				printh $nick "Syntax: $::botnick TWITTER BITLYAPI (Your bit.ly account API key)"
-				printh $nick "Syntax: $::botnick TWITTER SETUSERNAME <username> (Set your username - useful if you want messages to stand out that are sent to you)"
-				printh $nick ""
-				printh $nick "\002Client commands\002"
-				printh $nick "Syntax: $::botnick TWITTER REQTOKEN (Request your oAuth token)"
-				printh $nick "Syntax: $::botnick TWITTER ACCTOKEN <oauth token> <oauth token secret> <PIN from authentication url of $::botnick TWITTER REQTOKEN> (Use your token)"
-				printh $nick "Syntax: $::botnick TWITTER <message text> (Send a status update to twitter - 140 Char limit)"
-				printh $nick "Syntax: $::botnick TWITTER FOLLOW <screen name> (Follow a twitter user - Can only be used in Twitter channel)"
-				printh $nick "Syntax: $::botnick TWITTER UNFOLLOW <screen name> (Unfollow a twitter user)"
-				printh $nick "Syntax: $::botnick TWITTER FRIENDS (Displays your public timeline that includes your friends' tweets - at most 20 results)"
-				printh $nick "Syntax: $::botnick TWITTER MENTIONS (Displays messages directed at you.)"
-				printh $nick "Syntax: $::botnick TWITTER MENTIONS CLEAR (Reset your mentions timeline so you can view again if you hadn't been mentioned since last viewing.)"
-				printh $nick "Syntax: $::botnick TWITTER RETWEET <id> (Retweet a message that you found interesting)"
-				printh $nick "Syntax: $::botnick TWITTER DIRECT SEND <name> <msg> (Send a direct message to a user - 140 Char limit)"
-				printh $nick "Syntax: $::botnick TWITTER DIRECT LIST (lists your direct messages and their id number)"
-				printh $nick "Syntax: $::botnick TWITTER DIRECT DEL <msg id #> (deletes a direct message)"
-				printh $nick "Syntax: $::botnick TWITTER BLOCK ADD <screen name> (Add someone to the block list)"
-				printh $nick "Syntax: $::botnick TWITTER BLOCK DEL <screen name> (Remove someone from the block list)"
-				#printh $nick "Syntax: $::botnick TWITTER BLOCK CHECK <screen name> (Check to see if someone is on your block list)"
-				printh $nick "Syntax: $::botnick TWITTER BLOCK LIST (List your blocked people)"
-				printh $nick "Syntax: $::botnick TWITTER TRENDS <1|woeid #> (Displays the current top 10 trending topics with the search URL for location specified, if none or 1, then shows world trends)"
-				printh $nick "Syntax: $::botnick TWITTER AVAILABLE (Displays trend data for available locations)"
-				printh $nick "Syntax: $::botnick TWITTER FAVORITES (Displays your favorited tweets)"
-				printh $nick "Syntax: $::botnick TWITTER FAVORITES ADD <msg id #> (Add a tweet to your favorites)"
-				printh $nick "Syntax: $::botnick TWITTER FAVORITES DEL <msg id #> (Remove a tweet from your favorites)"
-				printh $nick "Syntax: $::botnick TWITTER PROFILE VIEW <screen name> (View a users profile)"
-				printh $nick "Syntax: $::botnick TWITTER PROFILE SET <NAME|URL|LOCATION|DESCRIPTION> <attrib> (Set various profile attributes)"
-				printh $nick "Syntax: $::botnick TWITTER SEARCH USER <screen name> (Search for a profile - returns the first 5 results)"
-				printh $nick "Syntax: $::botnick TWITTER SEARCH TWEET <-mixed|-recent|-popular> <query> (Search for tweets, if no flag given, default is mixed)"
-				printh $nick "Syntax: $::botnick TWITTER STATUS SHOW <msg id #> (Show a particular status update)"
-				printh $nick "Syntax: $::botnick TWITTER STATUS DELETE <msg id #> (Delete a tweet YOU sent)"
-				printh $nick "Syntax: $::botnick TWITTER STATUS REPLY <msg id #> <msg> (Link a tweet to a specific status ID)"
-			}
-			how - howto {
-				printh $nick "\002How To:\002"
-				printh $nick "How to set up this bead to work with twitter"
-				printh $nick ""
-				printh $nick "\[Registering the app with Twitter\]"
-				printh $nick "1.) Have a registered Twitter account."
-				printh $nick "2.) Go to http://dev.twitter.com/apps"
-				printh $nick "3.) Sign in under your registered twitter account."
-				printh $nick "4.) Click on \"Register a new app\" button"
-				printh $nick "5.) Fill out the form"
-				printh $nick "\002Application Name\002: This must be a unique name with Twitter. If an application is already registered with a certain name, when you go to submit your application, you will be told so."
-				printh $nick "\002Description\002: Give a brief description of your application."
-				printh $nick "\002Application Website\002: Put in http://www.stormbot.net"
-				printh $nick "\002Organization\002: Put in Stormbot TCL"
-				printh $nick "\002Application Type\002: Client"
-				printh $nick "\002Default Access Type\002: Read, write, and direct messages"
-				printh $nick "6.) Enter the CAPTCHA and click \"Register Application\""
-				printh $nick ""
-				printh $nick "\[Initializing the bead\]"
-				printh $nick "1.) Take note of the \002Consumer Key\002 and \002Consumer Secret\002"
-				printh $nick "2.) Type /msg ${::botnick} TWITTER SETKEY <consumer key> and hit enter. You will replace <consumer key> with the consumer key you took note of after registering your application."
-				printh $nick "3.) Type /msg ${::botnick} TWITTER SETSECRET <consumer secret> and hit enter. You will replace <consumer secret> with the consumer secret you took note of after registering your application."
-				printh $nick ""
-				printh $nick "\[Requesting access to Twitter\]"
-				printh $nick "Before issuing the commands to request access to Twitter, I have required that you let the bot know what channel you are restricting Twitter commands to. This was done to deter Twitter spam in rooms it isn't wanted. Only the bot owner can set this command."
-				printh $nick "To restrict the bot to a particular room for Twitter usage, type ${::botnick} RESTRICT #channelname"
-				printh $nick ""
-				printh $nick "Linking the bead to Twitter:"
-				printh $nick "1.) Type ${::botnick} TWITTER REQTOKEN in the channel in which you set to restrict usage."
-				printh $nick "The output the bot gives you is a web link you must visit that provies you with a PIN you will need to use in the next command. Either write it down or copy it to the clipboard."
-				printh $nick "2.) Type ${::botnick} TWITTER ACCTOKEN <oauth token> <oauth token secret> <PIN from authentication url of BOT twitter reqtoken>"
-				printh $nick "The information provided by the bot with the previous command gives you the <oauth token> and <oauth token secret>. I suggest you copy what the bot outputs up to <PIN from authorization URL of ${::botnick} TWITTER REQTOKEN> and then append the PIN from the web site you had to visit to the end of the command and hit enter."
-				printh $nick ""
-				printh $nick "Congratulations! You have now set up this bead to work with your Twitter account. If you run into any bugs, please contact [sbdget twitter:author]."
-			}
-			default {
-				printh $nick "\[TWITTER\]:"
-				printh $nick "This command will essentially turn your Stormbot eggdrop bot into a twitter client."
-				printh $nick "It is best to when using this command, place your bot in its own channel."
-				printh $nick "To see all available options:"
-				printh $nick "$::botnick TWITTER HELP ALL"
-				#printh $nick "$::botnick TWITTER HELP HOWTO"
-				printh $nick ""
-				printh $nick "NOTICE: If your tweet, direct message, retweet contains a URL and you go over the 140 character limit, use a url shortener"
-				printh $nick "like tinyurl.com, bit.ly, moourl.com, is.gd, or any other url shortener that you know of and resubmit your tweet."
-				printh $nick ""
-				printh $nick "Before even using this command, you must FIRST run $::botnick TWITTER SETKEY <consumer key> and then $::botnick TWITTER <consumer secret>"
-				printh $nick "Use $::botnick TWITTER HELP ALL to see what these commands do."
-			}
-		}
-		return 0
 	}
 
 	switch -glob -- $l1 {
@@ -482,7 +508,7 @@ proc SB:proc_twitter {nick host handle chan arg} {
 							print $nick "\[Resource: /search/tweets\] Status: All good, $remaining/$limit requests left, Resets: [clock format $reset -format "%l:%M %p"]"
 							return 0
 						} else {
-							print $nick "\[Resource: /search/tweets\] Status: Rate limit exceeded, $remaining/$limit requests left, Resets: [clock format $reset -format "%l:%M %p"]"
+							print $nick "\[Resource: /search/tweets\] [color 4]Status: Rate limit exceeded, $remaining/$limit requests left, Resets: [clock format $reset -format "%l:%M %p"][color]"
 							return 0
 						}
 					}
@@ -531,20 +557,20 @@ proc SB:proc_twitter {nick host handle chan arg} {
 						if {$m_remaining > 0} {
 							print $nick "\[Resource: /statuses/mentions_timeline\] Status: All good, $m_remaining/$m_limit requests left, Resets: [clock format $m_reset -format "%l:%M %p"]"
 						} else {
-							print $nick "\[Resource: /statuses/mentions_timeline\] Status: Rate limit exceeded, $m_remaining/$m_limit requests left, Resets: [clock format $m_reset -format "%l:%M %p"]"
+							print $nick "\[Resource: /statuses/mentions_timeline\] [color 4]Status: Rate limit exceeded, $m_remaining/$m_limit requests left, Resets: [clock format $m_reset -format "%l:%M %p"][color]"
 						}
 
 						if {$sid_remaining > 0} {
 							print $nick "\[Resource: /statuses/show/:id\] Status: All good, $sid_remaining/$sid_limit requests left, Resets: [clock format $sid_reset -format "%l:%M %p"]"
 						} else {
-							print $nick "\[Resource: /statuses/show/:id\] Status: Rate limit exceeded, $sid_remaining/$sid_limit requests left, Resets: [clock format $sid_reset -format "%l:%M %p"]"
+							print $nick "\[Resource: /statuses/show/:id\] [color 4]Status: Rate limit exceeded, $sid_remaining/$sid_limit requests left, Resets: [clock format $sid_reset -format "%l:%M %p"][color]"
 						}
 
 						if {$h_remaining > 0} {
 							print $nick "\[Resource: /statuses/home_timeline\] Status: All good, $h_remaining/$h_limit requests left, Resets: [clock format $h_reset -format "%l:%M %p"]"
 							return 0
 						} else {
-							print $nick "\[Resource: /statuses/home_timeline\] Status: Rate limit exceeded, $h_remaining/$h_limit requests left, Resets: [clock format $h_reset -format "%l:%M %p"]"
+							print $nick "\[Resource: /statuses/home_timeline\] [color 4]Status: Rate limit exceeded, $h_remaining/$h_limit requests left, Resets: [clock format $h_reset -format "%l:%M %p"][color]"
 							return 0
 						}
 					}
@@ -586,14 +612,14 @@ proc SB:proc_twitter {nick host handle chan arg} {
 						if {$u_remaining > 0} {
 							print $nick "\[Resource: /users/show/:id\] Status: All good, $u_remaining/$u_limit requests left, Resets: [clock format $u_reset -format "%l:%M %p"]"
 						} else {
-							print $nick "\[Resource: /users/show/:id\] Status: Rate limit exceeded, $u_remaining/$u_limit requests left, Resets: [clock format $u_reset -format "%l:%M %p"]"
+							print $nick "\[Resource: /users/show/:id\] [color 4]Status: Rate limit exceeded, $u_remaining/$u_limit requests left, Resets: [clock format $u_reset -format "%l:%M %p"][color]"
 						}
 
 						if {$x_remaining > 0} {
 							print $nick "\[Resource: /users/search\] Status: All good, $x_remaining/$x_limit requests left, Resets: [clock format $x_reset -format "%l:%M %p"]"
 							return 0
 						} else {
-							print $nick "\[Resource: /users/search\] Status: Rate limit exceeded, $x_remaining/$x_limit requests left, Resets: [clock format $x_reset -format "%l:%M %p"]"
+							print $nick "\[Resource: /users/search\] [color 4]Status: Rate limit exceeded, $x_remaining/$x_limit requests left, Resets: [clock format $x_reset -format "%l:%M %p"][color]"
 							return 0
 						}
 					}

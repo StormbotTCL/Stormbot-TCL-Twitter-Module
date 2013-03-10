@@ -19,6 +19,13 @@ up your eggdrop bot to work with [Twitter] (http://twitter.com "Twitter")
 
 Changelog - Dates are in Epoch time
 -----------------------------------
+1362878243
+
+*	More optimization changes.
+*	Restructered the help again (Thanks Mai!)
+*	Fixed the "[SB6 FAIL] An error occurred while using the TWITTER command: missing value to go with key error" when rate limit was exceeded. Will now return an actual error message stating this.
+*	Added notice in the bead's help (until something else can be thought of) stating that using this bead will make your twitter timeline public even if you have a private lock on Twitter's web site.
+
 1362828901
 
 *	After much headache, the consumer_key and consumer_secret have been moved over to the eggdrop user data file. Information that was stored globally for this has been removed from the global data file.
