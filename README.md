@@ -19,6 +19,13 @@ up your eggdrop bot to work with [Twitter] (http://twitter.com "Twitter")
 
 Changelog - Dates are in Epoch time
 -----------------------------------
+1376855542
+
+*	Made it to where I'm using Twitter's secure site addresses for their API
+*	Fixed changed API in pulling trending data.
+*	Added the ability to verify user credentials that were saved.
+*	Changed error message returned for error code 401.
+
 1362878243
 
 *	More optimization changes.

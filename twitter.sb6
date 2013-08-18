@@ -16,9 +16,9 @@ namespace eval oauth {
 	variable consumer_key ; # Do NOT define this with a value yet
 	variable consumer_secret ; # Do NOT define this with a value yet
 
-	variable request_token_url http://api.twitter.com/oauth/request_token
+	variable request_token_url https://api.twitter.com/oauth/request_token
 	variable authorize_url https://api.twitter.com/oauth/authorize
-	variable access_token_url http://api.twitter.com/oauth/access_token
+	variable access_token_url https://api.twitter.com/oauth/access_token
 
 	# timeout for http requests (ms)
 	variable timeout 60000
@@ -94,6 +94,8 @@ proc oauth:query_call {url method params {sign_params {}} {token_secret {}}} {
 
 # do http request with oauth header
 proc oauth:query {url method oauth_header {query {}}} {
+	http::register https 443 tls::socket
+
 	set header [list Authorization [concat "OAuth" $oauth_header]]
 
 	if {[string eq "GET" $method]} {
@@ -105,9 +107,9 @@ proc oauth:query {url method oauth_header {query {}}} {
 #dumpfile result.json $data
 	set ncode [http::ncode $token]
 	http::cleanup $token
-#debug.vars #bothouse data ncode
+#debug.vars #archer_engineering url ncode data
 	if [string eq -1 $ncode]  {error "Unknown error: $data"; return 0}
-	if [string eq 401 $ncode] {error "$result. (code: $ncode)"; return 0}
+	if [string eq 401 $ncode] {error "Unauthorized or unable to be authenticated. (code: $ncode)"; return 0}
 	if {[string eq 400 $ncode] || [string eq 403 $ncode]} {
 		foreach x [list $data] {
 			set reason [split $x \"]
@@ -185,45 +187,46 @@ namespace eval twitter {
 
 	# Twitter API URLs
 	# Timeline
-	variable home_url "http://api.twitter.com/1.1/statuses/home_timeline.json" ; # GET home_timeline.json?since_id=12345
-	variable ment_url "http://api.twitter.com/1.1/statuses/mentions_timeline.json" ; # GET mentions.json?since_id=12345
+	variable home_url "https://api.twitter.com/1.1/statuses/home_timeline.json" ; # GET home_timeline.json?since_id=12345
+	variable ment_url "https://api.twitter.com/1.1/statuses/mentions_timeline.json" ; # GET mentions.json?since_id=12345
 
 	# Tweets
-	variable retweet_url "http://api.twitter.com/1.1/statuses/retweet/" ; # POST id.json where id is the message id
-	variable status_show_url "http://api.twitter.com/1.1/statuses/show.json" ; # GET id.json where id is the message id
-	variable status_del_url "http://api.twitter.com/1.1/statuses/destroy/" ; # POST destroy.json?id=123
-	variable status_url "http://api.twitter.com/1.1/statuses/update.json" ; # POST
+	variable retweet_url "https://api.twitter.com/1.1/statuses/retweet/" ; # POST id.json where id is the message id
+	variable status_show_url "https://api.twitter.com/1.1/statuses/show.json" ; # GET id.json where id is the message id
+	variable status_del_url "https://api.twitter.com/1.1/statuses/destroy/" ; # POST destroy.json?id=123
+	variable status_url "https://api.twitter.com/1.1/statuses/update.json" ; # POST
 
 	# Search
-	variable search_url "http://search.twitter.com/search.json" ; # GET search.json?q=@noradio
+	variable search_url "https://search.twitter.com/search.json" ; # GET search.json?q=@noradio
 
 	# Direct Messages
-	variable dmsg_list_url "http://api.twitter.com/1.1/direct_messages.json" ; # GET
-	variable dmsg_del_url "http://api.twitter.com/1.1/direct_messages/destroy.json" ; # POST destroy.json?id=12345
-	variable dmsg_send_url "http://api.twitter.com/1.1/direct_messages/new.json" ; # POST new.json?user=noradio&text=test text
+	variable dmsg_list_url "https://api.twitter.com/1.1/direct_messages.json" ; # GET
+	variable dmsg_del_url "https://api.twitter.com/1.1/direct_messages/destroy.json" ; # POST destroy.json?id=12345
+	variable dmsg_send_url "https://api.twitter.com/1.1/direct_messages/new.json" ; # POST new.json?user=noradio&text=test text
 
 	# Friends & Followers
-	variable follow_url "http://api.twitter.com/1.1/friendships/create/create.json" ; # POST twitterapi.json?screen_name=noradio
-	variable unfollow_url "http://api.twitter.com/1.1/friendships/destroy.json" ; # POST destroy.json?screen_name=noradio
+	variable follow_url "https://api.twitter.com/1.1/friendships/create/create.json" ; # POST twitterapi.json?screen_name=noradio
+	variable unfollow_url "https://api.twitter.com/1.1/friendships/destroy.json" ; # POST destroy.json?screen_name=noradio
 
 	# Users
-	variable update_pro_url "http://api.twitter.com/1.1/account/update_profile.json" ; # POST
-	variable block_list_url "http://api.twitter.com/1.1/blocks/list.json" ; # GET
-	variable block_add_url "http://api.twitter.com/1.1/blocks/create.json" ; # POST create.json?screen_name=noradio
-	variable block_del_url "http://api.twitter.com/1.1/blocks/destroy.json" ; # POST destroy.json?screen_name=noradio
+	variable update_pro_url "https://api.twitter.com/1.1/account/update_profile.json" ; # POST
+	variable verify_url "https://api.twitter.com/1.1/account/verify_credentials.json" ; # GET
+	variable block_list_url "https://api.twitter.com/1.1/blocks/list.json" ; # GET
+	variable block_add_url "https://api.twitter.com/1.1/blocks/create.json" ; # POST create.json?screen_name=noradio
+	variable block_del_url "https://api.twitter.com/1.1/blocks/destroy.json" ; # POST destroy.json?screen_name=noradio
 
-	variable trends_url "http://api.twitter.com/1.1/trends/available.json" ; # GET
-	variable trends_woeid_url "http://api.twitter.com/1.1/trends/" ; # GET
+	variable trends_url "https://api.twitter.com/1.1/trends/available.json" ; # GET
+	variable trends_woeid_url "https://api.twitter.com/1.1/trends/place.json" ; # GET
 
-	variable search_usr_url "http://api.twitter.com/1.1/users/search.json" ; # GET search.json?q=noradio
-	variable rate_limit_url "http://api.twitter.com/1.1/application/rate_limit_status.json" ; # GET
+	variable search_usr_url "https://api.twitter.com/1.1/users/search.json" ; # GET search.json?q=noradio
+	variable rate_limit_url "https://api.twitter.com/1.1/application/rate_limit_status.json" ; # GET
 
-	variable show_pro_url "http://api.twitter.com/1.1/users/show.json" ; # GET show.json?screen_name=noradio
+	variable show_pro_url "https://api.twitter.com/1.1/users/show.json" ; # GET show.json?screen_name=noradio
 	#variable block_chk_url "http://api.twitter.com/1.1/blocks/exists.json" ; # GET exists.json?screen_name=noradio
 
-	variable fav_list_url "http://api.twitter.com/1.1/favorites/list.json" ; # GET
-	variable fav_add_url "http://api.twitter.com/1.1/favorites/create.json" ; # POST id.json where id is the message id
-	variable fav_del_url "http://api.twitter.com/1.1/favorites/destroy.json" ; # POST id.json where id is the message id
+	variable fav_list_url "https://api.twitter.com/1.1/favorites/list.json" ; # GET
+	variable fav_add_url "https://api.twitter.com/1.1/favorites/create.json" ; # POST id.json where id is the message id
+	variable fav_del_url "https://api.twitter.com/1.1/favorites/destroy.json" ; # POST id.json where id is the message id
 }
 
 proc SB:proc_twitter {nick host handle chan arg} {
@@ -257,6 +260,7 @@ proc SB:proc_twitter {nick host handle chan arg} {
 				printh $nick "\002\037Client commands\037:\002"
 				printh $nick "Syntax: $::botnick TWITTER REQTOKEN (Request your oAuth token)"
 				printh $nick "Syntax: $::botnick TWITTER ACCTOKEN <oauth token> <oauth token secret> <PIN from authentication url of $::botnick TWITTER REQTOKEN> (Use your token)"
+				printh $nick "Syntax: $::botnick TWITTER VERIFY (Verify your user credentials.)"
 				printh $nick "Syntax: $::botnick TWITTER <message text> (Send a status update to twitter - 140 Char limit)"
 				printh $nick "Syntax: $::botnick TWITTER FOLLOW <screen name> (Follow a twitter user - Can only be used in Twitter channel)"
 				printh $nick "Syntax: $::botnick TWITTER UNFOLLOW <screen name> (Unfollow a twitter user)"
@@ -470,6 +474,34 @@ proc SB:proc_twitter {nick host handle chan arg} {
 			setdata $handle TWITTERDISP $2
 			save
 			print $nick "Twitter user display is now: [stu [offon $2]]"
+			return 0
+		}
+
+		ver - verify {
+			# Verify user credentials stored.
+			set twhome [sbdget TWITTER:HOME]
+			if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
+			if ![string eq -nocase $chan $twhome] {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
+
+			# Use twitter:senddata process
+			if {[catch {twitter:senddata $handle $nick $twitter::verify_url} result]} {
+				print $nick $result
+				return 0
+			}
+
+			if {[dict exists $result error]} {
+				print $nick "Error: [dict get $result error]"
+				return 0
+			}
+
+			set info [list $result]
+
+			foreach a $info {
+				set name [dict get $a name]
+				set uname [dict get $a screen_name]
+			}
+
+			print $nick "Current credentials stored belong to [color 4]$uname[color] whose real name is [color 4]$name[color]."
 			return 0
 		}
 
@@ -1212,7 +1244,7 @@ proc SB:proc_twitter {nick host handle chan arg} {
 
 					# Use twitter:senddata process
 					if {[catch {twitter:senddata $handle $nick $twitter::trends_url} result]} {
-						print $nick "Trends fetch faild."
+						print $nick "Trends fetch failed."
 						return 0
 					}
 
@@ -1242,13 +1274,13 @@ proc SB:proc_twitter {nick host handle chan arg} {
 					# Use twitter:senddata process
 					if {[isempty 2]} {
 						set l2 1
-						if {[catch {twitter:senddata $handle $nick "${twitter::trends_woeid_url}${l2}.json"} result]} {
-							print $nick "Trends fetch failed."
+						if {[catch {twitter:senddata $handle $nick ${twitter::trends_woeid_url} [list id ${l2}] GET} result]} {
+							print $nick $result
 							return 0
 						}
 					} else {
-						if {[catch {twitter:senddata $handle $nick "${twitter::trends_woeid_url}${2}.json"} result]} {
-							print $nick "Trends fetch failed."
+						if {[catch {twitter:senddata $handle $nick ${twitter::trends_woeid_url} [list id ${2}] GET} result]} {
+							print $nick $result
 							return 0
 						}
 					}
@@ -1812,7 +1844,7 @@ proc twitter:shorten {url type} {
 proc twitter:check_packages args {
 	# Make sure the require packages are installed
 	empty ok bad
-	foreach a [list base64 json http sha1] {
+	foreach a [list base64 json http sha1 tls] {
 		set error [ catch { package require $a } ]
 		if $error { lappend bad $a } { lappend ok $a }
 	}
