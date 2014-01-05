@@ -352,7 +352,7 @@ proc SB:proc_twitter {nick host handle chan arg} {
 				printh $nick "$::botnick TWITTER HELP FIRST  \[one-time only: do this the first time you set up your bot for Twitter use\]"
 				printh $nick "$::botnick TWITTER HELP HOWTO  \[walk-through on setting your information up for Twitter account access & use\]"
 				printh $nick "$::botnick TWITTER HELP ALL    \[all possible commands and options\]"
-				printh $nick "$::botnick TWITTER HELP SOURCE \[GtiHub repository for original source code & coder contact\]"
+				printh $nick "$::botnick TWITTER HELP SOURCE \[GitHub repository for original source code & coder contact\]"
 				printh $nick ""
 				printh $nick "NOTE: If your tweet / direct message / retweet contains a URL, use a URL-shortening service to keep your tweet from exceeding 140 characters ( examples: tinyurl.com , bit.ly , moourl.com , is.gd )."
 				printh $nick "\002[color 4]IMPORTANT: IF YOU INTEND TO KEEP YOUR TWITTER PRIVATE, THEN IT IS BEST YOU SEEK ALTERNATIVE METHODS OF VIEWING TWITTER[color]\002"

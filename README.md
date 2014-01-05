@@ -19,6 +19,10 @@ up your eggdrop bot to work with [Twitter] (http://twitter.com "Twitter")
 
 Changelog - Dates are in Epoch time
 -----------------------------------
+1388918657
+
+*	Fixed a small typo in the help documentation when running BOTNICK TWITTER HELP.
+
 1376855542
 
 *	Made it to where I'm using Twitter's secure site addresses for their API
