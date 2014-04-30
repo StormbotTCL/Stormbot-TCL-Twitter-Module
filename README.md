@@ -19,6 +19,14 @@ up your eggdrop bot to work with [Twitter] (http://twitter.com "Twitter")
 
 Changelog - Dates are in Epoch time
 -----------------------------------
+1398871633
+
+*	Due to being returned with error code 403 (Forbidden) and doing some digging, found out the 
+reason was because SSL was required. All URLs were converted to https. As such, had to do some reconfiguration
+to the ::http:: command and register the https protocol.
+*	Added TLS package requirement
+*	Updated error return code to be more helpful.
+
 1388918657
 
 *	Fixed a small typo in the help documentation when running BOTNICK TWITTER HELP.
