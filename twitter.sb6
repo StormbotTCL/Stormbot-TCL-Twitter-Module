@@ -1,0 +1,1818 @@
+# Twitter Client through SB6
+#
+# It is required to place your bot in a channel dedicated to twitter as to not disrupt another channel's chatter
+#
+# Change Log:
+# Please refer to http://github.com/demonicpagan/Stormbot-TCL-Twitter-Module for changes made
+
+SB:command add TWITTER 1 -none TW
+SB:register variable global TWITTER:*
+sbd:set twitter:author "Dustin Lennon (demonicpagan@gmail.com)"
+
+# Package check moved into PROCs ~ Mai
+
+# oAuth TCL library by horgh (www.summercat.com) for Twitter
+namespace eval oauth {
+	variable consumer_key ; # Do NOT define this with a value yet
+	variable consumer_secret ; # Do NOT define this with a value yet
+
+	variable request_token_url https://api.twitter.com/oauth/request_token
+	variable authorize_url https://api.twitter.com/oauth/authorize
+	variable access_token_url https://api.twitter.com/oauth/access_token
+
+	# timeout for http requests (ms)
+	variable timeout 60000
+
+	proc consumer {handle} {
+		variable consumer_key [getdata $handle CONSUMER_KEY]
+		variable consumer_secret [getdata $handle CONSUMER_SECRET]
+		return 0
+	}
+}
+
+# first step
+proc oauth:get_request_token {} {
+	set params [list [list oauth_callback oob]]
+	set data [oauth:query_call $oauth::request_token_url GET $params]
+
+	# dict has oauth_token, oauth_token_secret, ...
+	set result [oauth:params_to_dict $data]
+	dict append result auth_url ${oauth::authorize_url}?[http::formatQuery oauth_token [dict get $result oauth_token]]
+
+	return $result
+}
+
+# second step
+# for twitter, oauth_verifier is pin
+# oauth_token & oauth_token_secret from get_request_token
+proc oauth:get_access_token {oauth_token oauth_token_secret oauth_verifier} {
+	set params [list [list oauth_token $oauth_token] [list oauth_verifier $oauth_verifier]]
+	set result [oauth:query_call $oauth::access_token_url POST $params]
+
+	# dict has oauth_token, oauth_token_secret (different than before), ...
+	return [oauth:params_to_dict $result]
+}
+
+# after first two steps succeed, we now can make api requests to twitter
+# query_dict is POST request to twitter as before, key:value pairing (dict)
+# oauth_token, oauth_token_secret from get_access_token
+proc oauth:query_api {url method oauth_token oauth_token_secret query_dict} {
+	set params [list [list oauth_token $oauth_token]]
+	set result [oauth:query_call $url $method $params $query_dict $oauth_token_secret]
+	return $result
+}
+
+# build header & query, call http request and return result
+# params stay in oauth header
+# sign_params are only used in base string for signing (optional) - dict
+proc oauth:query_call {url method params {sign_params {}} {token_secret {}}} {
+	set oauth_raw [dict create oauth_nonce [oauth:nonce]]
+	dict append oauth_raw oauth_signature_method HMAC-SHA1
+	dict append oauth_raw oauth_timestamp [clock seconds]
+	dict append oauth_raw oauth_consumer_key $oauth::consumer_key
+	dict append oauth_raw oauth_version 1.0
+
+	# variable number of params
+	foreach param $params {
+		dict append oauth_raw {*}$param
+	}
+
+	# second oauth_raw holds data to be signed but not placed in header
+	set oauth_raw_sign $oauth_raw
+	foreach key [dict keys $sign_params] {
+		dict append oauth_raw_sign $key [dict get $sign_params $key]
+	}
+
+	set signature [oauth:signature $url $method $oauth_raw_sign $token_secret]
+	dict append oauth_raw oauth_signature $signature
+
+	set oauth_header [oauth:oauth_header $oauth_raw]
+	set oauth_query [oauth:uri_escape $sign_params]
+
+	return [oauth:query $url $method $oauth_header $oauth_query]
+}
+
+# do http request with oauth header
+proc oauth:query {url method oauth_header {query {}}} {
+	set header [list Authorization [concat "OAuth" $oauth_header]]
+	::http::config -useragent "Mozilla/5.0 (Linux; U; Eggdrop) Stormbot TCL"
+	::http::register https 443 [list ::tls::socket -require 0 -request 1]
+
+	if {[string eq "GET" $method]} {
+		set token [http::geturl $url -headers $header -method $method -timeout $oauth::timeout]
+	} else {
+		set token [http::geturl $url -headers $header -query $query -method $method -timeout $oauth::timeout]
+	}
+	set data [http::data $token]
+#dumpfile result.json $data
+	set ncode [http::ncode $token]
+#debug.vars #dustin-shea-quarters data token ncode url
+	http::cleanup $token
+
+	if {$ncode != 200} {
+		set erta [list] ; # if {[string match *\\n* $data]} { set data "[lindex [split [string map [list \\n \n] $data] "\n"] 0]\}" }
+		set junk [split [string map -nocase [list \" "" "\[" "" "\]" "" "\{" "" "\}" ""] [join $data]] ,]
+		foreach name $junk {
+			lappend erta [string map [list ":" ": " "\\" ""] [string totitle [string trim $name]]]
+		}
+		if {[llength $erta]} { 
+			error "OAuth failed: ($ncode) [join [lsort -dictionary $erta] {; }] ( $status )"
+		} else {
+			error "OAuth failed: ($ncode) Unknown problem... No reason given...( $status )"
+		}
+	}
+
+	return $data
+}
+
+# take a dict of params and create as follows:
+# create string as: key="value",...,key2="value2"
+proc oauth:oauth_header {params} {
+	set header {}
+	foreach key [dict keys $params] {
+		set header "${header}[oauth:uri_escape $key]=\"[oauth:uri_escape [dict get $params $key]]\","
+	}
+	return [string trimright $header ","]
+}
+
+# take dict of params and create as follows
+# sort params by key
+# create string as key=value&key2=value2...
+# TODO: if key matches, sort by value
+proc oauth:params_signature {params} {
+	set str {}
+	foreach key [lsort [dict keys $params]] {
+		set str ${str}[oauth:uri_escape [list $key [dict get $params $key]]]&
+	}
+	return [string trimright $str &]
+}
+
+# build signature as in section 9 of oauth spec
+# token_secret may be empty
+proc oauth:signature {url method params {token_secret {}}} {
+	# We want base URL for signing (remove ?params=...)
+	set url [lindex [split $url "?"] 0]
+	set base_string [oauth:uri_escape ${method}]&[oauth:uri_escape ${url}]&[oauth:uri_escape [oauth:params_signature $params]]
+	set key [oauth:uri_escape $oauth::consumer_secret]&[oauth:uri_escape $token_secret]
+	set signature [sha1::hmac -bin -key $key $base_string]
+	return [base64::encode $signature]
+}
+
+proc oauth:nonce {} {
+	set nonce [clock clicks][rand 10000]
+	return [sha1::sha1 $nonce]
+}
+
+# wrapper around http::formatQuery which uppercases octet characters
+proc oauth:uri_escape {str} {
+	set str [http::formatQuery {*}$str]
+	# uppercase all %hex where hex=2 octets
+	set str [regsub -all -- {%(\w{2})} $str {%[string toupper \1]}]
+	return [subst $str]
+}
+
+# convert replies from http query into dict
+# params of form key=value&key2=value2
+proc oauth:params_to_dict {params} {
+	set answer {}
+	foreach pair [split $params &] {
+		dict set answer {*}[split $pair =]
+	}
+	return $answer
+}
+
+namespace eval twitter {
+	variable oauth_token
+	variable oauth_token_secret
+
+	# Twitter API URLs
+	# Timeline
+	variable home_url "https://api.twitter.com/1.1/statuses/home_timeline.json" ; # GET home_timeline.json?since_id=12345
+	variable ment_url "https://api.twitter.com/1.1/statuses/mentions_timeline.json" ; # GET mentions.json?since_id=12345
+
+	# Tweets
+	variable retweet_url "https://api.twitter.com/1.1/statuses/retweet/" ; # POST id.json where id is the message id
+	variable status_show_url "https://api.twitter.com/1.1/statuses/show.json" ; # GET id.json where id is the message id
+	variable status_del_url "https://api.twitter.com/1.1/statuses/destroy/" ; # POST destroy.json?id=123
+	variable status_url "https://api.twitter.com/1.1/statuses/update.json" ; # POST
+
+	# Search
+	variable search_url "https://search.twitter.com/search.json" ; # GET search.json?q=@noradio
+
+	# Direct Messages
+	variable dmsg_list_url "https://api.twitter.com/1.1/direct_messages.json" ; # GET
+	variable dmsg_del_url "https://api.twitter.com/1.1/direct_messages/destroy.json" ; # POST destroy.json?id=12345
+	variable dmsg_send_url "https://api.twitter.com/1.1/direct_messages/new.json" ; # POST new.json?user=noradio&text=test text
+
+	# Friends & Followers
+	variable follow_url "https://api.twitter.com/1.1/friendships/create/create.json" ; # POST twitterapi.json?screen_name=noradio
+	variable unfollow_url "https://api.twitter.com/1.1/friendships/destroy.json" ; # POST destroy.json?screen_name=noradio
+
+	# Users
+	variable update_pro_url "https://api.twitter.com/1.1/account/update_profile.json" ; # POST
+	variable block_list_url "https://api.twitter.com/1.1/blocks/list.json" ; # GET
+	variable block_add_url "https://api.twitter.com/1.1/blocks/create.json" ; # POST create.json?screen_name=noradio
+	variable block_del_url "https://api.twitter.com/1.1/blocks/destroy.json" ; # POST destroy.json?screen_name=noradio
+
+	variable trends_url "https://api.twitter.com/1.1/trends/available.json" ; # GET
+	variable trends_woeid_url "https://api.twitter.com/1.1/trends/" ; # GET
+
+	variable search_usr_url "https://api.twitter.com/1.1/users/search.json" ; # GET search.json?q=noradio
+	variable rate_limit_url "https://api.twitter.com/1.1/application/rate_limit_status.json" ; # GET
+
+	variable show_pro_url "https://api.twitter.com/1.1/users/show.json" ; # GET show.json?screen_name=noradio
+	#variable block_chk_url "http://api.twitter.com/1.1/blocks/exists.json" ; # GET exists.json?screen_name=noradio
+
+	variable fav_list_url "https://api.twitter.com/1.1/favorites/list.json" ; # GET
+	variable fav_add_url "https://api.twitter.com/1.1/favorites/create.json" ; # POST id.json where id is the message id
+	variable fav_del_url "https://api.twitter.com/1.1/favorites/destroy.json" ; # POST id.json where id is the message id
+}
+
+proc SB:proc_twitter {nick host handle chan arg} {
+	SB:setvariables
+
+	# Do this before investing any more CPU on the command ....
+	# Help information
+	if [string eq -nocase HELP $1] {
+		switch -exact -- $l2 {
+			all {
+				if [SB:checkaccess [sbd:get USERLEVEL:BOTOWNER] $handle] {
+                         printh $nick "\002\037Storing your Twitter credentials / Locking Channel\037:\002"
+					printh $nick "/msg $::botnick TWITTER SETKEY <consumer key>"
+					printh $nick "/msg $::botnick TWITTER SETSECRET <consumer secret>"
+					printh $nick "These are obtained by registering the bot as an app at: https://twitter.com/apps"
+					printh $nick ""
+					printh $nick "Syntax: $::botnick TWITTER RESTRICT <channel> (Only use twitter in this channel, must have 1000 access on the bot to set) - MUST BE SET!."
+                         printh $nick ""
+				}
+                    printh $nick "\002\037Client Options\037:\002"
+				printh $nick "Syntax: $::botnick TWITTER DISPLAY <off/on> (Display the readable name of twitter user)"
+				printh $nick "Syntax: $::botnick TWITTER RATELIMIT SEARCH (Display the rate limit status for the Search resource family)"
+				printh $nick "Syntax: $::botnick TWITTER RATELIMIT STATUSES (Display the rate limit status for the Statuses resource family)"
+				printh $nick "Syntax: $::botnick TWITTER RATELIMIT USERS (Display the rate limit status for the Users resource family)"
+				printh $nick "Syntax: $::botnick TWITTER SHORTENLEN <number> (Set the length of url's that will be shortened. 12-20 recommended)"
+				printh $nick "Syntax: $::botnick TWITTER SHORTENER <option> (0=is.gd, 1=moourl.com, 2=bit.ly, 3=cli.gs, 4=shar.es)"
+				printh $nick "Syntax: $::botnick TWITTER BITLYUN (Your bit.ly account username)"
+				printh $nick "Syntax: $::botnick TWITTER BITLYAPI (Your bit.ly account API key)"
+				printh $nick "Syntax: $::botnick TWITTER SETUSERNAME <username> (Set your username - useful if you want messages to stand out that are sent to you)"
+				printh $nick ""
+                    printh $nick "\002\037Client commands\037:\002"
+				printh $nick "Syntax: $::botnick TWITTER REQTOKEN (Request your oAuth token)"
+				printh $nick "Syntax: $::botnick TWITTER ACCTOKEN <oauth token> <oauth token secret> <PIN from authentication url of $::botnick TWITTER REQTOKEN> (Use your token)"
+				printh $nick "Syntax: $::botnick TWITTER <message text> (Send a status update to twitter - 140 Char limit)"
+				printh $nick "Syntax: $::botnick TWITTER FOLLOW <screen name> (Follow a twitter user - Can only be used in Twitter channel)"
+				printh $nick "Syntax: $::botnick TWITTER UNFOLLOW <screen name> (Unfollow a twitter user)"
+				printh $nick "Syntax: $::botnick TWITTER FRIENDS (Displays your public timeline that includes your friends' tweets - at most 20 results)"
+				printh $nick "Syntax: $::botnick TWITTER MENTIONS (Displays messages directed at you.)"
+				printh $nick "Syntax: $::botnick TWITTER MENTIONS CLEAR (Reset your mentions timeline so you can view again if you hadn't been mentioned since last viewing.)"
+				printh $nick "Syntax: $::botnick TWITTER RETWEET <id> (Retweet a message that you found interesting)"
+				printh $nick "Syntax: $::botnick TWITTER DIRECT SEND <name> <msg> (Send a direct message to a user - 140 Char limit)"
+				printh $nick "Syntax: $::botnick TWITTER DIRECT LIST (lists your direct messages and their id number)"
+				printh $nick "Syntax: $::botnick TWITTER DIRECT DEL <msg id #> (deletes a direct message)"
+				printh $nick "Syntax: $::botnick TWITTER BLOCK ADD <screen name> (Add someone to the block list)"
+				printh $nick "Syntax: $::botnick TWITTER BLOCK DEL <screen name> (Remove someone from the block list)"
+				#printh $nick "Syntax: $::botnick TWITTER BLOCK CHECK <screen name> (Check to see if someone is on your block list)"
+				printh $nick "Syntax: $::botnick TWITTER BLOCK LIST (List your blocked people)"
+				printh $nick "Syntax: $::botnick TWITTER TRENDS <1|woeid #> (Displays the current top 10 trending topics with the search URL for location specified, if none or 1, then shows world trends)"
+				printh $nick "Syntax: $::botnick TWITTER AVAILABLE (Displays trend data for available locations)"
+				printh $nick "Syntax: $::botnick TWITTER FAVORITES (Displays your favorited tweets)"
+				printh $nick "Syntax: $::botnick TWITTER FAVORITES ADD <msg id #> (Add a tweet to your favorites)"
+				printh $nick "Syntax: $::botnick TWITTER FAVORITES DEL <msg id #> (Remove a tweet from your favorites)"
+				printh $nick "Syntax: $::botnick TWITTER PROFILE VIEW <screen name> (View a users profile)"
+				printh $nick "Syntax: $::botnick TWITTER PROFILE SET <NAME|URL|LOCATION|DESCRIPTION> <attrib> (Set various profile attributes)"
+				printh $nick "Syntax: $::botnick TWITTER SEARCH USER <screen name> (Search for a profile - returns the first 5 results)"
+				printh $nick "Syntax: $::botnick TWITTER SEARCH TWEET <-mixed|-recent|-popular> <query> (Search for tweets, if no flag given, default is mixed)"
+				printh $nick "Syntax: $::botnick TWITTER STATUS SHOW <msg id #> (Show a particular status update)"
+				printh $nick "Syntax: $::botnick TWITTER STATUS DELETE <msg id #> (Delete a tweet YOU sent)"
+				printh $nick "Syntax: $::botnick TWITTER STATUS REPLY <msg id #> <msg> (Link a tweet to a specific status ID)"
+                    return 0
+			}
+               how - how-to - howto {
+				printh $nick "\002How To:\002"
+				printh $nick "How to set up this bead to work with twitter"
+				printh $nick ""
+				printh $nick "\[Registering the app with Twitter\]"
+                    printh $nick "1) Have a registered Twitter account."
+                    printh $nick "2) Go to http://dev.twitter.com/apps"
+                    printh $nick "3) Sign in under your registered twitter account."
+                    printh $nick "4) Click on \"Register a new app\" button"
+                    printh $nick "5) Fill out the form"
+				printh $nick "\002Application Name\002: This must be a unique name with Twitter. If an application is already registered with a certain name, when you go to submit your application, you will be told so."
+				printh $nick "\002Description\002: Give a brief description of your application."
+				printh $nick "\002Application Website\002: Put in http://www.stormbot.net"
+				printh $nick "\002Organization\002: Put in Stormbot TCL"
+				printh $nick "\002Application Type\002: Client"
+				printh $nick "\002Default Access Type\002: Read, write, and direct messages"
+                    printh $nick "6) Enter the CAPTCHA and click \"Register Application\""
+				printh $nick ""
+				printh $nick "\[Initializing the bead\]"
+                    printh $nick "7) Take note of the \002Consumer Key\002 and \002Consumer Secret\002"
+                    printh $nick "8) \002/msg ${::botnick} TWITTER SETKEY <consumer key>\002 and hit enter. You will replace <consumer key> with the consumer key you took note of after registering your application."
+                    printh $nick "9) \002/msg ${::botnick} TWITTER SETSECRET <consumer secret>\002 and hit enter. You will replace <consumer secret> with the consumer secret you took note of after registering your application."
+				printh $nick ""
+                    printh $nick "\[Requesting access to Twitter\]"
+				printh $nick "Before issuing the commands to request access to Twitter, I have required that you let the bot know what channel you are restricting Twitter commands to. This was done to deter Twitter spam in rooms it isn't wanted. Only the bot owner can set this command."
+				printh $nick "To restrict the bot to a particular room for Twitter usage, type ${::botnick} RESTRICT #channelname"
+				printh $nick ""
+				printh $nick "Linking the bead to Twitter:"
+                    printh $nick "10) \002${::botnick} TWITTER REQTOKEN\002 in the channel in which you set to restrict usage."
+				printh $nick "The output the bot gives you is a web link you must visit that provies you with a PIN you will need to use in the next command. Either write it down or copy it to the clipboard."
+                    printh $nick "11) \002${::botnick} TWITTER ACCTOKEN <oauth token> <oauth token secret> <PIN from authentication url of BOT twitter reqtoken>\002"
+				printh $nick "The information provided by the bot with the previous command gives you the <oauth token> and <oauth token secret>. I suggest you copy what the bot outputs up to <PIN from authorization URL of ${::botnick} TWITTER REQTOKEN> and then append the PIN from the web site you had to visit to the end of the command and hit enter."
+				printh $nick ""
+				printh $nick "Congratulations! You have now set up this bead to work with your Twitter account. If you run into any bugs, please contact [sbdget twitter:author]."
+                    return 0
+			}
+               1 - 1st - first - firstuse - first-use {
+                    printh $nick "Before even using the $u0 command, you must do the following command sequence:"
+                    printh $nick "$::botnick TWITTER TEST"
+                    printh $nick "$::botnick TWITTER SETKEY <consumer key>"
+                    printh $nick "$::botnick TWITTER SECRET <consumer secret>"
+                    printh $nick ""
+                    printh $nick "These are account-access keys that Twitter uses to allow you access to your account from the bot."
+                    printh $nick "After that, to see a walk-through on the standard setup, do: $::botnick $u0 HELP HOWTO"
+                    return 0
+               }
+               src - source {
+                    printh $nick "Coder: [sbd:get TWITTER:AUTHOR]"
+                    printh $nick "Source: http://github.com/demonicpagan/Stormbot-TCL-Twitter-Module"
+                    return 0
+               }
+			default {
+				printh $nick "\[TWITTER\]:"
+                    printh $nick "Syntax: $::botnick $u0 HELP"
+                    printh $nick "This command will essentially turn your Stormbot eggdrop bot into a twitter client."
+                    #printh $nick "It is best to when using this command, place your bot in its own channel."
+				printh $nick "To see all available options:"
+                    printh $nick "$::botnick TWITTER HELP FIRST  \[one-time only: do this the first time you set up your bot for Twitter use\]"
+                    printh $nick "$::botnick TWITTER HELP HOWTO  \[walk-through on setting your information up for Twitter account access & use\]"
+                    printh $nick "$::botnick TWITTER HELP ALL    \[all possible commands and options\]"
+                    printh $nick "$::botnick TWITTER HELP SOURCE \[GtiHub repository for original source code & coder contact\]"
+				printh $nick ""
+                    printh $nick "NOTE: If your tweet / direct message / retweet contains a URL, use a URL-shortening service to keep your tweet from exceeding 140 characters ( examples: tinyurl.com , bit.ly , moourl.com , is.gd )."
+                    return 0
+			}
+		}
+		return 0
+	}
+
+     # Okay, now do all the CPU intensive stuff ....
+
+	if ![sbd:nozero @TWITTER:PACKAGES_CHECKED] {
+		lassign [twitter:check_packages] a b
+		if [notempty b] { printh $nick "\[TWITTER\] Unable to run command (missing packages): [ajl $b]" ; return 0 }
+	}
+
+	oauth::consumer $handle
+
+	set disp [getdata $handle TWITTERDISP]
+	if [isempty disp] {zero disp}
+
+	# Set $DCCOKAY to 0 (only allow /MSG commands), or 1 (/MSG & .DCC are okay).
+	zero dccokay
+
+	# Make sure your running at least TCL 8.5
+	if {$::tcl_version < 8.5} {
+		set error [ catch { package require dict } null]
+		if $error {
+			print $nick "\[TWITTER WARNING\] You are running TCL v${::tcl_patchLevel}. It's recommended to upgrade to version 8.5."
+			if [string eq 8.4 $::tcl_version] {print $nick "\[TWITTER WARNING\] However, you can try compiling the DICT package for 8.4 found here, http://pascal.scheffers.net/software/tclDict-8.5.2.tar.gz -- I can't guarantee that after compiling that DICT package that this bead will work properly. If it doesn't, I'd suggest upgrading your TCL version."}
+			return 0
+		}
+	}
+
+	switch -glob -- $l1 {
+		test {
+			print $nick "\[${u0}\] Testing functions needed for $u0 to work:"
+			lassign [twitter:check_packages] ok bad
+			if [isempty bad] {
+				print $nick "\[${u0}\] All packages are available: [ajl $ok]"
+			} {
+				print $nick "\[${u0}\] Missing packages: [ajl $bad] ($u0 can't function without them!)"
+			}
+			return 0
+		}
+
+		ky - key - consumerkey - setky - setkey - setconsumerkey {
+			if ![string eq "" $2] {
+				if $dccokay {
+					if [sbd:equal -nocase @LAST_TRIGGER PUB] {printh $nick "You may not use this command in channel, for security purposes. Use either /MSG or .DCC to use this command."; return 0}
+				} else {
+					if ![sbd:equal -nocase @LAST_TRIGGER MSG] {printh $nick "You may only use this command in /MSG format for security purposes."; return 0}
+				}
+
+				setdata $handle CONSUMER_KEY $2
+				save
+				print $nick "Your TWITTER API Consumer Key has been saved."
+				return 0
+			} else {
+				noprint $nick "Current CONSUMER KEY: [getdata $handle CONSUMER_KEY]"
+				return 0
+			}
+		}
+
+		secret - consumersecret - setsecret - setconsumersecret {
+			if ![string eq "" $2] {
+				if $dccokay {
+					if [sbd:equal -nocase @LAST_TRIGGER PUB] {printh $nick "You may not use this command in channel, for security purposes. Use either /MSG or .DCC to use this command."; return 0}
+				} else {
+					if ![sbd:equal -nocase @LAST_TRIGGER MSG] {printh $nick "You may only use this command in /MSG format for security purposes."; return 0}
+				}
+
+				setdata $handle CONSUMER_SECRET $2
+				save
+				print $nick "Your TWITTER API Consumer Secret has been saved."
+				return 0
+			} else {
+				noprint $nick "Current CONSUMER SECRET: [getdata $handle CONSUMER_SECRET]"
+				return 0
+			}
+		}
+
+		lc - lock* - chan - rest* {
+			set editaccess 1000
+			if ![SB:checkaccess $editaccess $handle $chan] {printh $nick "You are not permitted to edit this setting."; return 0}
+			set twhome [sbdget TWITTER:HOME]
+			set thome $j2
+
+			if [string eq "" $2] {
+				if [isempty twhome] {
+					print $nick "TWITTER command channel has not been set, please set one."; return 0
+				} else {
+					print $nick "Current TWITTER command channel: ${twhome}"; return 0
+				}
+			}
+
+			if {[lsearch -exact [list OFF NONE CLEAR] $ju2] > -1} {
+				sbdset TWITTER:HOME
+				SB:botdatafile write
+				print $nick "TWITTER command channel setting has been cleared."
+				return 0
+			}
+
+			if {![validchan $thome] && ![isempty twhome]} {print $nick "${thome} is not currently a channel I reside on."; return 0}
+			if {[stl $thome] == [stl $twhome]} {printh $nick "The TWITTER command channel is already set to: ${twhome}"; return 0}
+
+			sbdset TWITTER:HOME $thome
+			SB:botdatafile write
+			printh $nick "Setting the TWITTER command channel to ${thome}"
+			return 0
+		}
+
+		dis - disp - display {
+			# Display the readable format of a twitter user by their screen name
+			set offon [nozero [l0 $disp]]
+			if [isempty 2] {print $nick "Current TWITTER USER DISPLAY status: [offon $offon]"; return 0}
+			set 2 [string is true $2]
+
+			setdata $handle TWITTERDISP $2
+			save
+			print $nick "Twitter user display is now: [stu [offon $2]]"
+			return 0
+		}
+
+		rate - rl - limit - ratelimit {
+			set twhome [sbdget TWITTER:HOME]
+			if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
+			if ![string eq -nocase $chan $twhome] {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
+
+			switch -glob -- $l2 {
+				search {
+					# Use twitter:senddata process
+					if {[catch {twitter:senddata $handle $nick $twitter::rate_limit_url [list resources search] GET} result]} {
+						print $nick "Unable to retrieve your rate limit status. ($result)"
+						return 0
+					}
+
+					if {[dict exists $result error]} {
+						print $nick "Error: [dict get $result error]"
+						return 0
+					}
+
+					set status [list $result]
+
+					foreach stat $status {
+						set base [dict get $stat resources]
+						set search [dict get $base search]
+						set search_limits [dict get $search /search/tweets]
+
+						foreach s [list $search_limits] {
+							set remaining [dict get $s remaining]
+							set limit [dict get $s limit]
+							set reset [dict get $s reset]
+						}
+
+						if {$remaining > 0} {
+							print $nick "\[Resource: /search/tweets\] Status: All good, $remaining/$limit requests left, Resets: [clock format $reset -format "%l:%M %p"]"
+							return 0
+						} else {
+							print $nick "\[Resource: /search/tweets\] Status: Rate limit exceeded, $remaining/$limit requests left, Resets: [clock format $reset -format "%l:%M %p"]"
+							return 0
+						}
+					}
+						return 0
+				}
+
+				statuses {
+					# Use twitter:senddata process
+					if {[catch {twitter:senddata $handle $nick ${twitter::rate_limit_url} [list resources statuses] GET} result]} {
+						print $nick "Unable to retrieve your rate limit status. ($result)"
+						return 0
+					}
+
+					if {[dict exists $result error]} {
+						print $nick "Error: [dict get $result error]"
+						return 0
+					}
+
+					set status [list $result]
+
+					foreach stat $status {
+						set base [dict get $stat resources]
+						set statuses [dict get $base statuses]
+						set mention_tl [dict get $statuses /statuses/mentions_timeline]
+						set show_id [dict get $statuses /statuses/show/:id]
+						set home_tl [dict get $statuses /statuses/home_timeline]
+
+						foreach m [list $mention_tl] {
+							set m_remaining [dict get $m remaining]
+							set m_limit [dict get $m limit]
+							set m_reset [dict get $m reset]
+						}
+
+						foreach sid [list $show_id] {
+							set sid_remaining [dict get $sid remaining]
+							set sid_limit [dict get $sid limit]
+							set sid_reset [dict get $sid reset]
+						}
+
+						foreach h [list $home_tl] {
+							set h_remaining [dict get $h remaining]
+							set h_limit [dict get $h limit]
+							set h_reset [dict get $h reset]
+						}
+
+						if {$m_remaining > 0} {
+							print $nick "\[Resource: /statuses/mentions_timeline\] Status: All good, $m_remaining/$m_limit requests left, Resets: [clock format $m_reset -format "%l:%M %p"]"
+						} else {
+							print $nick "\[Resource: /statuses/mentions_timeline\] Status: Rate limit exceeded, $m_remaining/$m_limit requests left, Resets: [clock format $m_reset -format "%l:%M %p"]"
+						}
+
+						if {$sid_remaining > 0} {
+							print $nick "\[Resource: /statuses/show/:id\] Status: All good, $sid_remaining/$sid_limit requests left, Resets: [clock format $sid_reset -format "%l:%M %p"]"
+						} else {
+							print $nick "\[Resource: /statuses/show/:id\] Status: Rate limit exceeded, $sid_remaining/$sid_limit requests left, Resets: [clock format $sid_reset -format "%l:%M %p"]"
+						}
+
+						if {$h_remaining > 0} {
+							print $nick "\[Resource: /statuses/home_timeline\] Status: All good, $h_remaining/$h_limit requests left, Resets: [clock format $h_reset -format "%l:%M %p"]"
+							return 0
+						} else {
+							print $nick "\[Resource: /statuses/home_timeline\] Status: Rate limit exceeded, $h_remaining/$h_limit requests left, Resets: [clock format $h_reset -format "%l:%M %p"]"
+							return 0
+						}
+					}
+					return 0
+				}
+
+				users {
+					# Use twitter:senddata process
+					if {[catch {twitter:senddata $handle $nick ${twitter::rate_limit_url} [list resources users] GET} result]} {
+						print $nick "Unable to retrieve your rate limit status. ($result)"
+						return 0
+					}
+
+					if {[dict exists $result error]} {
+						print $nick "Error: [dict get $result error]"
+						return 0
+					}
+
+					set status [list $result]
+
+					foreach stat $status {
+						set base [dict get $stat resources]
+						set users [dict get $base users]
+						set uid [dict get $users /users/show/:id]
+						set u_search [dict get $users /users/search]
+
+						foreach u [list $uid] {
+							set u_remaining [dict get $u remaining]
+							set u_limit [dict get $u limit]
+							set u_reset [dict get $u reset]
+						}
+
+						foreach x [list $u_search] {
+							set x_remaining [dict get $x remaining]
+							set x_limit [dict get $x limit]
+							set x_reset [dict get $x reset]
+						}
+
+						if {$u_remaining > 0} {
+							print $nick "\[Resource: /users/show/:id\] Status: All good, $u_remaining/$u_limit requests left, Resets: [clock format $u_reset -format "%l:%M %p"]"
+						} else {
+							print $nick "\[Resource: /users/show/:id\] Status: Rate limit exceeded, $u_remaining/$u_limit requests left, Resets: [clock format $u_reset -format "%l:%M %p"]"
+						}
+
+						if {$x_remaining > 0} {
+							print $nick "\[Resource: /users/search\] Status: All good, $x_remaining/$x_limit requests left, Resets: [clock format $x_reset -format "%l:%M %p"]"
+							return 0
+						} else {
+							print $nick "\[Resource: /users/search\] Status: Rate limit exceeded, $x_remaining/$x_limit requests left, Resets: [clock format $x_reset -format "%l:%M %p"]"
+							return 0
+						}
+					}
+					return 0
+				}
+
+				default {
+					print $nick "Please specify either SEARCH, STATUSES, or USERS"
+					return 0
+				}
+			}
+		}
+
+		shrtn - shorten - shortenlen {
+			# URLs/Links have to be greater than this number to be reduced by the shortner setting.
+			set twhome [sbdget TWITTER:HOME]
+			if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
+			if ![string eq -nocase $chan $twhome] {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
+
+			if [isempty 2] {print $nick "Your current URLs/Links will be shortened if greater than [getdata $handle TWSHORTEN] characters"; return 0}
+
+			setdata $handle TWSHORTEN $2
+			save
+			print $nick "URLs/Links will now be shortened if greater than $2 characters."
+			return 0
+		}
+
+		shrtnr - shortener {
+			#Choice of URL/Link shortener
+			# 0=is.gd, 1=moourl.com, 2=bit.ly, 3=cli.gs, 4=shar.es
+			set twhome [sbdget TWITTER:HOME]
+			if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
+			if ![string eq -nocase $chan $twhome] {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
+
+			if [isempty 2] {print $nick "You are currently using [lindex [list http://is.gd http://moourl.com http://bit.ly http://cli.gs] [getdata $handle TWSHORTENER]] as your URL shortener."; return 0}
+
+			setdata $handle TWSHORTENER $2
+			save
+
+			print $nick "Your URL/link shortener has been set to: [lindex [list http://is.gd http://moourl.com "http://bit.ly (Please set your bit.ly username & API key)" http://cli.gs] $l2]"; return 0
+			return 0
+		}
+
+		bun - bitlyun - bitlyusername {
+			# User's bit.ly account username
+			if $dccokay {
+				if [sbd:equal -nocase @LAST_TRIGGER PUB] {printh $nick "You may not use this command in channel, for security purposes. Use either /MSG or .DCC to use this command."; return 0}
+			} else {
+				if ![sbd:equal -nocase @LAST_TRIGGER MSG] {printh $nick "You may only use this command in /MSG format for security purposes."; return 0}
+			}
+
+			setdata $handle BITLY-USERNAME $2
+			save
+			print $nick "Your bit.ly username has been saved."
+			return 0
+		}
+
+		bapi - bitlyapi - bitlyapikey {
+			# User's bit.ly account API key
+			if $dccokay {
+				if [sbd:equal -nocase @LAST_TRIGGER PUB] {printh $nick "You may not use this command in channel, for security purposes. Use either /MSG or .DCC to use this command."; return 0}
+			} else {
+				if ![sbd:equal -nocase @LAST_TRIGGER MSG] {printh $nick "You may only use this command in /MSG format for security purposes."; return 0}
+			}
+
+			setdata $handle BITLY-APIKEY $2
+			save
+			print $nick "Your bit.ly API Key has been saved."
+			return 0
+		}
+
+		name - setuser - setname - setusername {
+			if [isempty 2] { set name [getdata $handle TWNAME]; printh $nick "Your TWITTER username is set to $nick"; return 0}
+			setdata $handle TWNAME $2
+			save
+			print $nick "Your username has been saved."
+			return 0
+		}
+
+		rtok - reqtok - reqtoken - requesttoken {
+			set twhome [sbdget TWITTER:HOME]
+			if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
+			if ![string eq -nocase $chan $twhome] {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
+
+			if {[catch {oauth:get_request_token} data]} {
+				print $nick "Error: $data"
+				return 0
+			}
+
+			set url [dict get $data auth_url]
+			print $nick "To get your authentication verifier, visit ${url} and allow the application on your Twiter account."
+			print $nick "Once completed, use $::botnick TWITTER ACCTOKEN [dict get $data oauth_token] [dict get $data oauth_token_secret] <PIN from authorization URL of $::botnick TWITTER REQTOKEN>"
+			return 0
+		}
+
+		atok - acctok - acctoken - accesstoken {
+			set twhome [sbdget TWITTER:HOME]
+			if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
+			if ![string eq -nocase $chan $twhome] {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
+
+			if [string eq "" $2e] {print $nick "USAGE: $::botnick TWITTER ACCTOKEN <oauth token> <oauth token secret> <pin>"; return 0}
+
+			set oauth_token $2
+			set oauth_token_secret $3
+			set pin $4
+
+			if {[catch {oauth:get_access_token $oauth_token $oauth_token_secret $pin} data]} {
+				print $nick "Error: $data"
+				return 0
+			}
+
+			set twitter::oauth_token [dict get $data oauth_token]
+			set twitter::oauth_token_secret [dict get $data oauth_token_secret]
+			set screen_name [dict get $data screen_name]
+
+			setdata $handle TWOAUTH "$twitter::oauth_token $twitter::oauth_token_secret $pin $screen_name"
+			save
+
+			print $nick "Successfully retrieved access token for ${screen_name}"
+			return 0
+		}
+
+		profile {
+			set twhome [sbdget TWITTER:HOME]
+			if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
+			if ![string eq -nocase $chan $twhome] {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
+
+			switch -exact -- $l2 {
+				set {
+					switch -exact -- $l3 {
+						name {
+							# Update the name on your profile
+							# Use twitter:senddata process
+							if {[catch {twitter:senddata $handle $nick $twitter::update_pro_url [list name $j4e]} result]} {
+								print $nick "Unable to update the name on your profile, please try again."
+								return 0
+							}
+
+							print $nick "Your name has now been set to $j4e"
+							return 0
+						}
+
+						url {
+							# Update the url on your profile
+							# Use twitter:senddata process
+							if {[catch {twitter:senddata $handle $nick $twitter::update_pro_url [list url $j4e]} result]} {
+								print $nick "Unable to update your url, please try again."
+								return 0
+							}
+
+							print $nick "Your url has now been set to $j4e"
+							return 0
+						}
+
+						loc - location {
+							# Update the location on your profile
+							# Use twitter:senddata process
+							if {[catch {twitter:senddata $handle $nick $twitter::update_pro_url [list location $j4e]} result]} {
+								print $nick "Unable to update your location, please try again."
+								return 0
+							}
+
+							print $nick "Your location has now been set to $j4e"
+							return 0
+						}
+
+						desc - description {
+							# Update the description on your profile
+							# Use twitter:senddata process
+							if {[catch {twitter:senddata $handle $nick $twitter::update_pro_url [list description $j4e]} result]} {
+								print $nick "Unable to update your description, please try again."
+								return 0
+							}
+
+							if {[len $j4] > 160} {
+								print $nick "Please set a description less than 160 characters and try again."
+								return 0
+							} else {
+								print $nick "Your description has now been set to $j4e"
+								return 0
+							}
+							return 0
+						}
+					}
+					return 0
+				}
+
+				view - show {
+					set name $3
+
+					# Use twitter:senddata process
+					if {[catch {twitter:senddata $handle $nick $twitter::show_pro_url [list screen_name $name] GET} result]} {
+						print $nick "Unable to retrieve profile for $name."
+						return 0
+					}
+
+					set info [list $result]
+
+					foreach profile $info {
+						set id [dict get $profile id]
+						set name [dict get $profile name]
+						set sname [dict get $profile screen_name]
+						set location [dict get $profile location]
+						set desc [dict get $profile description]
+						set url [dict get $profile url]
+						set follow_count [dict get $profile followers_count]
+						set status [dict get $profile status]
+						set ltweet [dict get $status text]
+						set tweets [dict get $profile statuses_count]
+
+						# Format time Sat May 26 12:45:00 +0000 2007 into an integer
+						# converts it to Sat, May 26, 2007 @ 12:45 pm GMT
+						# Taking in consideration for 8.4 backwards compatibility
+						set created [clock format [clock scan [lreplace [split [dict get $profile created_at]] 4 4] -gmt true] -format "%a, %b %d, %Y @ %r %Z"]
+
+						set fav_count [dict get $profile favourites_count]
+						set friend_count [dict get $profile friends_count]
+						set tzone [dict get $profile time_zone]
+					}
+
+					print $nick "\002${sname}'s Profile ($id)\002"
+					print $nick "Screen Name: $sname"
+					print $nick "Name: $name"
+					print $nick "Location: $location"
+					print $nick "Time Zone: $tzone"
+					print $nick "URL: $url"
+					print $nick "Description: $desc"
+					print $nick "Counts - Friends: [comma $friend_count], Followers: [comma $follow_count], Favorites: [comma $fav_count], Tweets: [comma $tweets]"
+					print $nick "Last tweet: $ltweet"
+					print $nick "Created: $created"
+					return 0
+				}
+			}
+			return 0
+		}
+
+		re - rt - retweet {
+			# Retweet: BOT twitter (or tw) retweet (or rt) <id> to retweet a message
+			set twhome [sbdget TWITTER:HOME]
+			if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
+			if ![string eq -nocase $chan $twhome] {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
+
+			# Use twitter:senddata process
+			if {[catch {twitter:senddata $handle $nick "${twitter::retweet_url}${2}.json" {} POST} result]} {
+				print $nick "Retweet failure! ($2) You can't retweet your own updates!"
+				return 0
+			}
+
+			set retweets [list $result]
+			foreach rtw $retweets {
+				set id [dict get $rtw id]
+				set text [dict get $rtw text]
+			}
+			print $nick "Your retweet has been submitted: $text (MSG ID: $id)"
+			return 0
+		}
+
+		dm - direct {
+			switch -glob -- $l2 {
+				send {
+					# Direct Message: BOT twitter (or tw) dm send <name> <msg> to direct message one of your followers
+					set twhome [sbdget TWITTER:HOME]
+					if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
+					if ![string eq -nocase $chan $twhome] {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
+
+					set params [list screen_name $3 text [twitter:urlshorten [twitter:replacetext $j4e]]]
+
+					# Use twitter:senddata process
+					if {[catch {twitter:senddata $handle $nick $twitter::dmsg_send_url $params} result]} {
+						print $nick "Message to \002$3\002 failed ($result)! Are they following you?"
+						return 0
+					} elseif {[len $j3e] > 140} {
+						set old_text $j4e
+						set truncate 140
+						set text [twitter:urlshorten [twitter:replacetext $j4e]]
+
+						print $nick "I've shortened this to a total of [len $text] characters, yet it's still too long. Use a service like http://www.twitlonger.com to submit this tweet, or send in multiple parts."
+						print $nick "Submitted text: $old_text"
+						print $nick "Shortened text: $text"
+						print $nick "Snipped at: [mid $text [expr $truncate + 1] 40]"
+						print $nick "Your direct message could not be sent to: $3"
+						return 0
+					} else {
+						set direct [list $result]
+						foreach dm $direct {
+							set id [dict get $dm id]
+						}
+						print $nick "Your direct message has been sent to: $3 (MSG ID: $id)"
+					}
+
+					return 0
+				}
+
+				lst - list {
+					# List your direct messages
+					set twhome [sbdget TWITTER:HOME]
+					if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
+					if ![string eq -nocase $chan $twhome] {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
+
+					set mid [getdata $handle since_message_id]
+					if [isempty mid] { set mid 1 }
+
+					# Use twitter:senddata process
+					if {[catch {twitter:senddata $handle $nick $twitter::dmsg_list_url [list since_id $mid count 10] GET} result]} {
+						print $nick "Message retrieval failed. ($result)"
+						return 0
+					}
+
+					# Retrieve direct messages
+					set msgs [lreverse $result]
+					zero x
+					foreach msg $msgs {
+						set id [dict get $msg id]
+						set text [twitter:convert-unicode [SB:convert_html_codes [dict get $msg text]]]
+						set sent [formattime [twitter:converttime [dict get $msg created_at]] $handle]
+						set sender [dict get $msg sender_screen_name]
+						set senderinfo [dict get $msg sender]
+						set name [dict get $senderinfo name]
+
+						print $nick "[incr x]. From $name ($sender) sent: $text ($sent)(Msg ID: $id)"
+						setdata $handle since_message_id $id
+					}
+
+					save
+					return 0
+				}
+
+				"-" - del* {
+					# BOT twitter (or tw) dm del <msg id #> Delete Direct messages
+					set twhome [sbdget TWITTER:HOME]
+					if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
+					if ![string eq -nocase $chan $twhome] {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
+
+					# Use twitter:senddata process
+					if {[catch {twitter:senddata $handle $nick $twitter::dmsg_del_url [list id $3]} result]} {
+						print $nick "Error! Message couldn't be deleted."
+					}
+
+					# Retrieve message for deletion
+					set msg [list $result]
+					foreach a $msg {
+						set sendinfo [dict get $a sender]
+						set sender [dict get $sendinfo name]
+						set id [dict get $a id]
+						set text [dict get $a text]
+
+						print $nick "Deleted msg: $id \"$text\" sent from $sender"
+					}
+
+					return 0
+				}
+			}
+			return 0
+		}
+
+		blk - block {
+			# Block: BOT twitter (or tw) block <option> - to handle your block list
+			switch -glob -- $l2 {
+				+ - add {
+					# Add someone to the block list
+					set twhome [sbdget TWITTER:HOME]
+					if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
+					if ![string eq -nocase $chan $twhome] {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
+
+					# Use twitter:senddata process
+					if {[catch {twitter:senddata $handle $nick $twitter::block_add_url [list screen_name $3]} result]} {
+						print $nick "Unable to add $3 to block list."
+						return 0
+					}
+
+					set nfo [list $result]
+					foreach a $nfo {
+						set id [dict get $a id]
+						set sname [dict get $a screen_name]
+					}
+
+					print $nick "You are now blocking [stu $sname] ($id)"
+					return 0
+				}
+
+				"-" - del* {
+					# Remove someone from the block list
+					set twhome [sbdget TWITTER:HOME]
+					if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
+					if ![string eq -nocase $chan $twhome] {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
+
+					# Use twitter:senddata process
+					if {[catch {twitter:senddata $handle $nick $twitter::block_del_url [list screen_name $3]} result]} {
+						print $nick "Unable to remove $3 from block list."
+						return 0
+					}
+
+					set nfo [list $result]
+					foreach a $nfo {
+						set id [dict get $a id]
+						set sname [dict get $a screen_name]
+					}
+
+					print $nick "You are now unblocking [stu $sname] ($id)"
+					return 0
+				}
+
+				lst - list {
+					# List your blocked users
+					set twhome [sbdget TWITTER:HOME]
+					if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
+					if ![string eq -nocase $chan $twhome] {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
+
+					# Use twitter:senddata process
+					if {[catch {twitter:senddata $handle $nick $twitter::block_list_url} result]} {
+						print $nick "Unable to retrieve your block list."
+						return 0
+					}
+
+					set nfo [list $result]
+					zero x
+					foreach a $nfo {
+						set users [dict get $a users]
+						set prev_cursor [dict get $a previous_cursor_str]
+						set next_cursor [dict get $a next_cursor_str]
+
+						foreach u $users {
+							set id [dict get $u id]
+							set sname [dict get $u screen_name]
+							set name [dict get $u name]
+
+							print $nick "[incr x]. $sname ($name) - ID: $id"
+						}
+					}
+					return 0
+				}
+			}
+			return 0
+		}
+
+		fr - friend - friends {
+			# Friends: BOT twitter (or tw) friends  - to retrieve a friend's timeline
+			set twhome [sbdget TWITTER:HOME]
+			if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
+			if ![string eq -nocase $chan $twhome] {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
+
+			set twfreply [getdata $handle since_freplies_id]
+			if [isempty twfreply] { set twfreply 1 }
+
+			# Use twitter:senddata process
+			if {[catch {twitter:senddata $handle $nick $twitter::home_url [list since_id $twfreply count 10] GET} result]} {
+				print $nick "Retrieval error. $result"
+				return 0
+			}
+
+			set replies [lreverse $result]
+
+			foreach reply $replies {
+				set id [dict get $reply id]
+				set user [dict get $reply user]
+				set uname [dict get $user screen_name]
+				set name [dict get $user name]
+
+				set source [dict get $reply source]
+				regexp -nocase -- {<a.+?>(.+?)</a>} $source all source
+
+				set date [formattime [twitter:converttime [dict get $reply created_at]] $handle]
+
+				set text [twitter:convert-unicode [SB:convert_html_codes [dict get $reply text]]]
+				# Replace utf-8 entities that aren't covered by SB:convert_html_codes
+				foreach {a b} [list \u2014 -- \u2019 ' \u2018 ' &#8212\\\; -- \u2013 -] {regsub -all $a $text $b text}
+
+				if {[getdata $handle TWNAME] == $uname} {
+					if {[getdata $handle TWITTERDISP]} {
+						print $nick "[color 13]\002$uname ($name)\002: $text (Posted: $date) via $source[color] (MSG ID: $id)"
+					} else {
+						print $nick "[color 13]\002$uname\002: $text (Posted: $date) via $source[color] (MSG ID: $id)"
+					}
+				} else {
+					if {[getdata $handle TWITTERDISP]} {
+						print $nick "\002$uname ($name)\002: $text (Posted: $date) via $source (MSG ID: $id)"
+					} else {
+						print $nick "\002$uname\002: $text (Posted: $date) via $source (MSG ID: $id)"
+					}
+				}
+
+				setdata $handle since_freplies_id $id
+			}
+			save
+			return 0
+		}
+
+		rp - rpy - reply - men\[t?\] - mentions - replies { # Reply/Mentions code optimized for performance by Mai, thanks :)
+			switch -glob -- $l2 {
+				clear {
+					if {[stl $3] != "clear"} {printh $nick "Are you \002\037SURE\037\002?! Use \"CLEAR CLEAR\" to convince me."; return 0}
+					set twreply 1
+					setdata $handle since_replies $twreply
+					save
+					print $nick "I have reset your mentions list. It will return the 20 most recent results."
+					return 0
+				}
+
+				default {
+					# Replies: BOT twitter (or tw) replies to retrieve your replies (@yourname) timeline
+					set twhome [sbdget TWITTER:HOME]
+					if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
+					if ![string eq -nocase $chan $twhome] {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
+
+					set twreply [getdata $handle since_replies]
+					if [isempty twreply] { set twreply 1 }
+
+					# Use twitter:senddata process
+					if {[catch {twitter:senddata $handle $nick $twitter::ment_url [list since_id $twreply include_rts true] GET} result]} {
+						print $nick "Unable to retrieve your mentions time line."
+						return 0
+					}
+
+					if [isempty result] {print $nick "You have no recent mentions. You have already viewed your most recent ones. Use $::botnick TWITTER MENTIONS CLEAR CLEAR to reset and view again."; return 0}
+
+					set replies [lreverse $result]
+					zero x
+
+					foreach reply $replies {
+						set id [dict get $reply id]
+						set user [dict get $reply user]
+						set uname [dict get $user screen_name]
+						set name [dict get $user name]
+
+						set source [dict get $reply source]
+						regexp -all -nocase -- {<a.+?>(.+?)</a>} $source all source
+
+						set date [formattime [twitter:converttime [dict get $reply created_at]] $handle]
+
+						set text [twitter:convert-unicode [SB:convert_html_codes [dict get $reply text]]]
+						# Replace utf-8 entities that aren't covered by SB:convert_html_codes
+						foreach {a b} [list \u2014 -- \u2019 ' \u2018 ' &#8212\\\; -- \u2013 -] {regsub -all $a $text $b text}
+
+						if {[getdata $handle TWITTERDISP]} {
+							print $nick "[incr x]. \002$uname ($name)\002: $text (Posted: $date) via $source (MSG ID: $id)"
+						} else {
+							print $nick "[incr x]. \002$uname\002: $text (Posted: $date) via $source (MSG ID: $id)"
+						}
+
+						setdata $handle since_replies $id
+					}
+					save
+					return 0
+				}
+			}
+		}
+
+		f - folow - follow {
+			# Follow: BOT twitter (or tw) follow <name> to follow a user
+			set twhome [sbdget TWITTER:HOME]
+			if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
+			if ![string eq -nocase $chan $twhome] { print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
+			if [isempty l2] {print $nick "You must input a twitter account to follow."; return 0}
+
+			# Use twitter:senddata process
+			if {[catch {twitter:senddata $handle $nick $twitter::follow_url [list screen_name $l2]} result]} {
+				printh $nick $result
+				return 0
+			}
+
+			print $nick "You are now following: [color 8][stu $l2][color]"
+			return 0
+		}
+
+		l - uf - unfolow - unfollow {
+			# Unfollow: BOT twitter (or tw) unfollow <name> to unfollow a user
+			set twhome [sbdget TWITTER:HOME]
+			if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
+			if ![string eq -nocase $chan $twhome] { print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
+			if [isempty l2] {print $nick "You must input a twitter account to unfollow."; return 0}
+
+			# Use twitter:senddata process
+			if {[catch {twitter:senddata $handle $nick $twitter::unfollow_url [list screen_name $l2]} result]} {
+				printh $nick $result
+				return 0
+			}
+
+			print $nick "You are now unfollowing: [color 8][stu $l2][color]"
+			return 0
+		}
+
+		trend - trending - trends {
+			switch -glob -- $l2 {
+				avail - available {
+					# Get the current available trending areas
+					# BOT twitter (or tw) trends available
+					set twhome [sbdget TWITTER:HOME]
+					if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
+					if ![string eq -nocase $chan $twhome] {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
+
+					# Use twitter:senddata process
+					if {[catch {twitter:senddata $handle $nick $twitter::trends_url} result]} {
+						print $nick "Trends fetch faild."
+						return 0
+					}
+
+					set trending [lreverse $result]
+					zero x
+
+					foreach t $trending {
+						set country [dict get $t country]
+						set woeid [dict get $t woeid]
+						set code [dict get $t countryCode]
+						set name [dict get $t name]
+
+						print $nick "[incr x]. Name: $name Country: $country ($code) WOEID: $woeid"
+					}
+					print $nick "To find what's trending in that location, use $::botnick TWITTER TRENDS <WOEID>"
+
+					return 0
+				}
+
+				default {
+					# Get the current top 10 trends for world or location
+					# BOT twitter (or tw) trends
+					set twhome [sbdget TWITTER:HOME]
+					if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
+					if ![string eq -nocase $chan $twhome] {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
+
+					# Use twitter:senddata process
+					if {[isempty 2]} {
+						set l2 1
+						if {[catch {twitter:senddata $handle $nick "${twitter::trends_woeid_url}${l2}.json"} result]} {
+							print $nick "Trends fetch failed."
+							return 0
+						}
+					} else {
+						if {[catch {twitter:senddata $handle $nick "${twitter::trends_woeid_url}${2}.json"} result]} {
+							print $nick "Trends fetch failed."
+							return 0
+						}
+					}
+
+					set trending [lreverse $result]
+					foreach t $trending {
+						set trends [dict get $t trends]
+
+						# Format time Mon, 19 Oct 2009 07:50:48 +0000 into an integer < no longer valid, Twitter changed their datetime format
+						# to %Y-%m-%dT%H:%M:%SZ
+						# > Demonicpagan: % clock format [clock scan 2011-10-14T15:34:40Z -format "%Y-%m-%dT%H:%M:%SZ" -timezone UTC] -format "%a, %B %d, %Y @%l:%M GMT" -timezone GMT
+						# converts it to Sat, May 26, 2007 @ 12:45 pm GMT
+						# Taking in consideration for 8.4 backwards compatibility
+						set asof [clock format [clock scan [dict get $t as_of] -format "%Y-%m-%dT%H:%M:%SZ" -timezone UTC] -format "%a, %b %d, %Y @ %r %Z"]
+						zero x
+
+						foreach a $trends {
+							set name [dict get $a name]
+							set url [dict get $a url]
+
+							print $nick "[incr x]. $name - $url"
+						}
+
+						print $nick "Last update: $asof"
+					}
+					return 0
+				}
+			}
+		}
+
+		list - lists {
+			# Manage your Twitter lists - Coming SOON
+			switch -exact -- $l2 {
+				create {
+					# Create a list - accounts limited to 20 lists
+					# http://api.twitter.com/1.1/user/lists.format
+					return 0
+				}
+
+				update {
+					# http://api.twitter.com/1.1/user/lists/id.format - id = name of list
+					return 0
+				}
+			}
+			return 0
+		}
+
+		su - search {
+			switch -exact -- $l2 {
+				user {
+					# Search for users on Twitter
+					# BOT twitter search user <user>
+					set twhome [sbdget TWITTER:HOME]
+					if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
+					if ![string eq -nocase $chan $twhome] {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
+
+					set user $3e
+
+					# Use twitter:senddata process
+					if {[catch {twitter:senddata $handle $nick $twitter::search_usr_url [list q ${user} per_page 5] GET} data]} {
+						print $nick "Search error (${user}) - ($data)"
+						return 0
+					}
+
+					zero x
+
+					foreach u $data {
+						set name [dict get $u name]
+						set screen_name [dict get $u screen_name]
+						set location [dict get $u location]
+						set desc [dict get $u description]
+						set follow [dict get $u following]
+						set followers [dict get $u followers_count]
+						set friends [dict get $u friends_count]
+						if [dict exists $u status] {set status [dict get $u status]
+
+							set text [twitter:convert-unicode [SB:convert_html_codes [dict get $status text]]]
+							# Replace utf-8 entities that aren't covered by SB:convert_html_codes
+							foreach {a b} [list \u2014 -- \u2019 ' \u2018 ' &#8212\\\; -- \u2013 -] {regsub -all $a $text $b text}
+						} else {
+							set text null
+						}
+
+						set created [clock format [clock scan [lreplace [split [dict get $u created_at]] 4 4] -gmt true] -format "%a, %b %d, %Y @ %r %Z"]
+
+						print $nick "[incr x]. \002$name ($screen_name)\002"
+						print $nick "\002Description:\002 $desc \002Location:\002 $location \002Following:\002 $follow \002Followers:\002 $followers \002Friends:\002 $friends \002Created:\002 $created \002Latest Tweet:\002 $text"
+					}
+					print $nick ">End Search"
+					return 0
+				}
+
+				tweet {
+					# Search for tweets with contained query
+					# BOT twitter search tweet <-recent|-popular|-mixed|-until> <query>
+					set twhome [sbdget TWITTER:HOME]
+					if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
+					if ![string eq -nocase $chan $twhome] {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
+
+					set id [getdata $handle since_search_id]
+
+					set arg $2e
+					SB:setvariables -mixed -recent -popular
+					if {[llength $flags] > 2} {empty flags}; # Fall-through to next check ....
+					if [isempty flags] {set flags -mixed}
+
+					# Use twitter:senddata process
+					if [validflag -recent] {
+						if {[catch {twitter:senddata $handle $nick $twitter::search_url [list q ${1e} show_user true since_id $id result_type recent] GET} data]} {
+							print $nick "Search error: $data"
+							return 0
+						}
+					} elseif [validflag -popular] {
+						if {[catch {twitter:senddata $handle $nick $twitter::search_url [list q ${1e} show_user true since_id $id result_type popular] GET} data]} {
+							print $nick "Search error: $data"
+							return 0
+						}
+					} elseif [validflag -mixed] {
+						if {[catch {twitter:senddata $handle $nick $twitter::search_url [list q ${1e} show_user true since_id $id result_type mixed] GET} data]} {
+							print $nick "Search error: $data"
+							return 0
+						}
+					}
+
+					set results [list $data]
+
+					foreach r $results {
+						set result [dict get $r results]
+						set since [dict get $r since_id]
+						set query [dict get $r query]
+						set time [dict get $r completed_in]
+
+						zero x
+
+						foreach res $result {
+							set name [dict get $res from_user]
+
+							set text [twitter:convert-unicode [SB:convert_html_codes [dict get $res text]]]
+							# Replace utf-8 entities that aren't covered by SB:convert_html_codes
+							foreach {a b} [list \u2014 -- \u2019 ' \u2018 ' &#8212\\\; -- \u2013 -] {regsub -all $a $text $b text}
+
+							print $nick "[incr x]. $name: $text"
+						}
+
+						print $nick "Query: $query, Completed in ${time}s"
+
+						setdata $handle since_search_id $since
+					}
+					save
+					return 0
+				}
+
+				default {
+					if {![string eq -nocase $2 user] || ![string eq -nocase $2 tweet]} {printh $nick "Syntax: $::botnick TWITTER SEARCH USER <screen name> OR $::botnick TWITTER SEARCH TWEET <-mixed|-recent|-popular> <query>"; return 0}
+				}
+			}
+		}
+
+		fav - favorite - favorites {
+			switch -glob -- $l2 {
+				+ - add {
+					# Add a tweet to your favorites
+					# BOT twitter (or tw) favorites add
+					set twhome [sbdget TWITTER:HOME]
+					if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
+					if ![string eq -nocase $chan $twhome] {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
+
+					# Use twitter:senddata process
+					if {[catch {twitter:senddata $handle $nick $twitter::fav_add_url [list id $3] POST} result]} {
+						print $nick "That tweet ID is already favorited!"
+						return 0
+					}
+
+					set fav [list $result]
+					foreach param $fav {
+						set text [dict get $param text]
+					}
+					print $nick "The tweet \002$text\002 has been added to your favorites."
+					return 0
+				}
+
+				"-" - del* {
+					# Delete a favorited tweet
+					# BOT twitter (or tw) favorites del
+					set twhome [sbdget TWITTER:HOME]
+					if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
+					if ![string eq -nocase $chan $twhome] {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
+
+					# Use twitter:senddata process
+					if {[catch {twitter:senddata $handle $nick $twitter::fav_del_url [list id $3] POST} result]} {
+						print $nick "Tweet ID doesn't exist in your favorites!"
+						return 0
+					}
+
+					set fav [list $result]
+					foreach param $fav {
+						set text [dict get $param text]
+						set id [dict get $param id]
+					}
+					print $nick "The tweet \002$text\002 has been removed from your favorites (MSG ID: $id)."
+					return 0
+				}
+
+				default {
+					# View your favorited tweets
+					# BOT twitter (or tw) favorites
+					set twhome [sbdget TWITTER:HOME]
+					if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
+					if ![string eq -nocase $chan $twhome] {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
+
+					# Use twitter:senddata process
+					if {[catch {twitter:senddata $handle $nick $twitter::fav_list_url} result]} {
+						print $nick "Unable to retrieve your favorites list."
+						return 0
+					}
+
+					set fav [lreverse $result]
+					zero x
+
+					foreach f $fav {
+						set user [dict get $f user]
+						set uname [dict get $user screen_name]
+						set name [dict get $user name]
+						set id [dict get $f id]
+
+						set source [dict get $f source]
+						regexp -nocase -- {<a.+?>(.+?)</a>} $source all source
+
+						set date [formattime [twitter:converttime [dict get $f created_at]] $handle]
+
+						set text [twitter:convert-unicode [SB:convert_html_codes [dict get $f text]]]
+						# Replace utf-8 entities that aren't covered by SB:convert_html_codes
+						foreach {a b} [list \u2014 -- \u2019 ' \u2018 ' &#8212\\\; -- \u2013 -] {regsub -all $a $text $b text}
+
+						if {[getdata $handle TWNAME] == $uname} {
+							if {[getdata $handle TWITTERDISP]} {
+								print $nick "[incr x]. [color 13]$uname ($name): $text (Posted: $date) via $source[color] (MSG ID: $id)"
+							} else {
+								print $nick "[incr x]. [color 13]$uname: $text (Posted: $date) via $source[color] (MSG ID: $id)"
+							}
+						} else {
+							if {[getdata $handle TWITTERDISP]} {
+								print $nick "[incr x]. $uname ($name): $text (Posted: $date) via $source (MSG ID: $id)"
+							} else {
+								print $nick "[incr x]. $uname: $text (Posted: $date) via $source (MSG ID: $id)"
+							}
+						}
+					}
+					print $nick ">End Favorites"
+					return 0
+				}
+			}
+		}
+
+		stat - stats - status {
+			switch -glob -- $l2 {
+				"-" - del* {
+					# Delete a tweet you've sent
+					# BOT twitter status delete <msg id>
+					set twhome [sbdget TWITTER:HOME]
+					if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
+					if ![string eq -nocase $chan $twhome] {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
+
+					# Use twitter:senddata process
+					if {[catch {twitter:senddata $handle $nick "${twitter::status_del_url}${3}.json" {} POST} result]} {
+						print $nick "Unable to delete tweet (does it exist?)"
+						return 0
+					}
+
+					# Retrieve tweet for deletion
+					set tweet [list $result]
+					foreach a $tweet {
+						set text [dict get $a text]
+						set id [dict get $a id]
+						print $nick "Deleted tweet: \"$text\" (MSG ID: $id)"
+					}
+					return 0
+				}
+
+				rep* {
+					# Reply to a specific status ID
+					# BOT twitter status reply <msg id>
+					set twhome [sbdget TWITTER:HOME]
+					if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
+					if ![string eq -nocase $chan $twhome] {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
+
+					# Use twitter:senddata process
+					if {[catch {twitter:senddata $handle $nick $twitter::status_url [list in_reply_to_status_id $3 status [twitter:urlshorten [twitter:replacetext $j4e]]]} result]} {
+						print $nick "Error: Unable to post tweet."
+						return 0
+					} elseif {[len $j4e] > 140} {
+						set old_text $j1e
+						set truncate 140
+						set text [twitter:urlshorten [twitter:replacetext $j4e]]
+
+						print $nick "I've shortened this to a total of [len $text] characters, yet it's still too long. Use a service like http://www.twitlonger.com to submit this tweet, or send in multiple parts."
+						print $nick "Submitted text: $old_text"
+						print $nick "Shortened text: $text"
+						print $nick "Snipped at: [mid $text [expr $truncate + 1] 40]"
+						print $nick "Your tweet could not be submitted."
+						return 0
+					} else {
+						set tweets [list $result]
+						foreach tw $tweets {
+							set id [dict get $tw id]
+							set text [dict get $tw text]
+						}
+						print $nick "Your tweet has been submitted: $text (MSG ID: $id)"
+						return 0
+					}
+					return 0
+				}
+
+				show - disp* {
+					# Display a certain status id
+					# BOT twitter status show <msg id>
+					set twhome [sbdget TWITTER:HOME]
+					if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
+					if ![string eq -nocase $chan $twhome] {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
+
+					# Use twitter:senddata process
+					if {[catch {twitter:senddata $handle $nick $twitter::status_show_url [list id $3] GET} result]} {
+						print $nick "Unable to find tweet id $3 (does it exist?)"
+						return 0
+					}
+
+					# Retrieve tweet information
+					set tweet [list $result]
+
+					foreach tw $tweet {
+						set id [dict get $tw id]
+						set rpltoid [dict get $tw in_reply_to_status_id]
+
+						set user [dict get $tw user]
+						set uname [dict get $user screen_name]
+						set name [dict get $user name]
+
+						set date [formattime [twitter:converttime [dict get $tw created_at]] $handle]
+
+						set text [twitter:convert-unicode [SB:convert_html_codes [dict get $tw text]]]
+						# Replace utf-8 entities that aren't covered by SB:convert_html_codes
+						foreach {a b} [list \u2014 -- \u2019 ' \u2018 ' &#8212\\\; -- \u2013 -] {regsub -all $a $text $b text}
+
+						set source [dict get $tw source]
+						regexp -nocase -- {<a.+?>(.+?)</a>} $source all source
+
+						if {[getdata $handle TWNAME] == $uname} {
+							if {[getdata $handle TWITTERDISP]} {
+								print $nick "[color 13]$uname ($name): $text (Posted: $date) via $source[color] (MSG ID: $id) (REPLY-TO ID: $rpltoid)"
+							} else {
+								print $nick "[color 13]$uname: $text (Posted: $date) via $source[color] (MSG ID: $id) (REPLY-TO ID: $rpltoid)"
+							}
+						} else {
+							if {[getdata $handle TWITTERDISP]} {
+								print $nick "$uname ($name): $text (Posted: $date) via $source (MSG ID: $id) (REPLY-TO ID: $rpltoid)"
+							} else {
+								print $nick "$uname: $text (Posted: $date) via $source (MSG ID: $id) (REPLY-TO ID: $rpltoid)"
+							}
+						}
+					}
+					return 0
+				}
+			}
+		}
+
+		default {
+			# Default command option: to send a message
+			# BOT twitter (or tw) <msg>
+			set twhome [sbdget TWITTER:HOME]
+			if [isempty twhome] {print $nick "You don't have a command channel set, you must set one to use this command."; return 0}
+			if ![string eq -nocase $chan $twhome] {print $nick "You cannot use this command in this channel, commands must be directed to ${twhome}"; return 0}
+
+			# Use twitter:senddata process
+			if {[catch {twitter:senddata $handle $nick $twitter::status_url [list status [twitter:urlshorten [twitter:replacetext $j1e]]]} result]} {
+				print $nick "Error: Unable to post tweet. ($result)"
+				return 0
+			} elseif {[len $j1e] > 140} {
+				set old_text $j1e
+				set truncate 140
+				set text [twitter:urlshorten [twitter:replacetext $j1e]]
+
+				print $nick "I've shortened this to a total of [len $text] characters, yet it's still too long. Use a service like http://www.twitlonger.com to submit this tweet, or send in multiple parts."
+				print $nick "Submitted text: $old_text"
+				print $nick "Shortened text: $text"
+				print $nick "Snipped at: [mid $text [expr $truncate + 1] 40]"
+				print $nick "Your tweet could not be submitted."
+				return 0
+			} else {
+				set tweets [list $result]
+				foreach tw $tweets {
+					set id [dict get $tw id]
+					set text [dict get $tw text]
+				}
+				print $nick "Your tweet has been submitted: $text (MSG ID: $id)"
+				return 0
+			}
+			return 0
+		}
+	}
+}
+
+# Process to send data to Twitter
+proc twitter:senddata { handle nick url {query_list {}} {http_method {}} } {
+	# Set http method of query
+	if {[isempty http_method] && [notempty query_list]} {
+		set method POST
+	} elseif {[isempty http_method] && [isempty query_list]} {
+		set method GET
+	} else {
+		set method $http_method
+	}
+
+	set x [split [getdata $handle TWOAUTH]]
+	set oauth_token [l0 $x]
+	set oauth_token_secret [l1 $x]
+
+	if {[isempty oauth_token] || [isempty oauth_token_secret]} {
+		print $nick "Error: oAuth not initialized. Use $::botnick TWITTER REQTOKEN"
+		return 0
+	}
+
+	# workaround as twitter expects ?param=value as part of URL for GET queries
+	# that have params!
+	if {[string eq "GET" $method] && [notempty query_list]} {
+		set url ${url}[twitter:url_params $query_list]
+	}
+
+	set data [oauth:query_api $url $method $oauth_token $oauth_token_secret $query_list]
+
+	return [json::json2dict $data]
+}
+
+# return ?param1=value1&param2=value2... from key = param name dict
+proc twitter:url_params {params_dict} {
+	set str "?"
+	foreach key [dict keys $params_dict] {
+		set str ${str}${key}=[http::formatQuery [dict get $params_dict $key]]&
+	}
+	return [string trimright $str &]
+}
+
+# Work with URL shorteners
+proc twitter:urlshorten text {
+	upvar 1 handle handle; # Copy $HANDLE from calling PROC.
+	set newtext ""
+	foreach word [split $text] {
+		if {[regexp {^www\.} $word] && ([string length $word] > [expr {[getdata $handle TWSHORTEN] + 6}])} {
+			append newtext "[twitter:shorten "http://$word" [getdata $handle TWSHORTENER]] "
+		} elseif {[regexp {^http\:} $word] && [string length $word] > [getdata $handle TWSHORTEN]} {
+			append newtext "[twitter:shorten $word [getdata $handle TWSHORTENER]] "
+		} else {
+			append newtext "$word "
+		}
+	}
+	return [string trim $newtext]
+}
+
+# Shorten words to reduce text length
+proc twitter:replacetext text {
+	# Start a list of words to be shortened
+	array set list ""
+	set list(1) [list you U you're yr four 4 tomorrow 2morrow about abt to 2 two 2 because b/c with w/]
+	set list(2) [list without w/out for 4 and \046 be B sorry sry this ths toady 2day why y text txt]
+	set list(3) [list our R are R next nxt would wld like lk want wnt one 1 see C really rlly these ths]
+	set list(4) [list won't wnt i've ive "bye for now" BFN background BG "best regards" BR "by the way" BTW]
+	set list(5) [list "direct message" DM email EM facebook FB "face to face" FTF "for what it's worth" FWIW]
+	set list(6) [list great Gr8 "in my opinion" IMO "in my honest opinion" IMHO "in my humble opinion" IMHO]
+	set list(7) [list "in real life" IRL "just kidding" J/K LinkedIn LI "let me know" LMK "laughing my butt off" LMBO]
+	set list(8) [list "laughin my ass off" LMAO "laughin out loud" LOL "no problem" NP "oh my god" OMG]
+	set list(9) [list "oh my fucking god" OMFG please plz "rolling on the floor laughing" ROFL retweet RT]
+	set list(10) [list "thanks for the retweet" RTHX "tweet me back" TMB "too much information" TMI]
+	set list(11) [list "talk to you soon" TTYS "talk to you later" TTYL "thank you" TY "what the heck" WTH]
+	set list(12) [list "what the hell" WTH "what the fuck" WTF "you're welcome" YW "you are welcome" YW]
+
+	foreach x [lsort -int -inc [array names list]] {
+		set item $list($x)
+		foreach {find replace} $item {
+			set text [ldestroy -all -nonulls -replace $text $find $replace]
+		}
+	}
+
+	return $text
+}
+
+# Thanks again to Mai for writing this process. I would have had no idea on how to handle the unicode conversion.
+proc twitter:convert-unicode { text { convert_to "utf-8"} } {
+	set regexp [regexp -inline -all -- {\\u....} $text]
+	# Tighter restraint?
+	# set regexp [regexp -inline -all -nocase -- {\\u[0-9a-f]{4}} $text]
+	foreach item $regexp {
+		set item_split [split $item]
+		set mid [mid $item 3];
+		set dec [dec \$$mid];
+		eval set char $item;
+		regsub -all -- $item_split $text $char text
+	}
+
+	return [encoding convertto $convert_to $text]
+}
+
+# Another one by Mai ....
+proc twitter:converttime date {
+	if ![regexp -nocase -- {^[A-Z]{3} [A-Z]{3} \d\d \d\d:\d\d:\d\d [\+\-]\d{4} \d{4}$} $date] {return $date}
+	lassign $date day month date time zone year
+	#lassign [split $time :] hour monute second
+	set timestamp [clock scan "$date $month $year $time"]
+	set yourzone [nozero [left $zone 3][mantissa [ fixmath [ right $zone 2 ] / 60 ]]]
+	set my [clock format [now] -format %z]
+	set myzone [nozero [left $my 3][mantissa [ fixmath [ right $my 2 ] / 60 ]]]
+	if [string compare $myzone $yourzone] {
+		add timestamp [ fixmath ( $myzone - $yourzone ) * 3600 ]
+		int timestamp
+	}
+
+	return $timestamp; # Adjusted so it'll print the time relative to YOUR timezone
+}
+
+proc twitter:shorten {url type} {
+	# 0=is.gd, 1=moourl.com, 2=bit.ly, 3=cli.gs, 4=shar.es
+	# moourl.com is unavalable until they release an api
+	set agent "User Agent: Mozilla/5.0 (Windows; U; Windows NT 6.0; en-US; rv:1.9.2.3) Gecko/20100401 Firefox/3.6.3 GTB7.0 ( .NET CLR 3.5.30729)"
+	set www [::http::config -useragent $agent -urlencoding "utf-8"]
+
+	# Be sure you cover the "idiot user customized this, allowing a different
+	# number (e.g. "5") to come through to here" scenario (via DEFAULT)
+
+	# Also, since only 1 of these needs the HANDLE variable, shorten the
+	# PROC invocation by aliasing $HANDLE to the calling PROC. This means:
+	# one less variable to send to this PROC.
+	upvar 1 handle handle; # Copy $HANDLE from calling PROC.
+
+
+	switch -- $type {
+		0 {set query "http://is.gd/api.php?[http::formatQuery longurl $url]"}
+		1 {set query *1}
+		2 {set query "http://api.bit.ly/v3/shorten?[http::formatQuery login [getdata $handle BITLY-USERNAME] apiKey [getdata $handle BITLY-APIKEY] longUrl $url format txt]"}
+		3 {set query "http://cli.gs/api/v1/cligs/create?[http::formatQuery url $url]&title=&key=&appid=StormbotTCL"}
+		default {return $url}
+	}
+
+	# Double SWITCHing allows for "special case" processing ....
+	switch -exact $query {
+		*1 {
+			# Handle MOOURL.COM special issue:
+			array set headers [SB:get_headers http://moourl.com/create/?source=[SB:url_encode $url]]
+			set location [file tail $headers(Location)]
+			regsub -- {\?moo\=} $location "" location
+			return http://moourl.com/$location
+		}
+		default {
+			set token [http::geturl $query -timeout 10000]
+			upvar #0 $token state
+			#if [instr $state(body) [space]] {return [regsub -all -- \n $state(body) ""]}
+			return [regsub -all -- \n $state(body) ""]
+		}
+	}
+
+	return $url
+}
+
+proc twitter:check_packages args {
+	# Make sure the require packages are installed
+	empty ok bad
+	foreach a [list base64 json http sha1] {
+		set error [ catch { package require $a } ]
+		if $error { lappend bad $a } { lappend ok $a }
+	}
+	return [list $ok $bad]
+}
