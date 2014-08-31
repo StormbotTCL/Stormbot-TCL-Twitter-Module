@@ -1088,7 +1088,7 @@ proc SB:proc_twitter {nick host handle chan arg} {
 
 				if {[getdata $handle TWNAME] == $uname} {
 					if {[getdata $handle TWITTERDISP]} {
-						print $nick "[color 13]\002$uname ($name)\002: [encode convertfrom utf-8 $text] (Posted: $date) via $source[color] (MSG ID: $id)"
+						print $nick "[color 13]\002$uname ($name)\002: [encoding convertfrom utf-8 $text] (Posted: $date) via $source[color] (MSG ID: $id)"
 					} else {
 						print $nick "[color 13]\002$uname\002: [encoding convertfrom utf-8 $text] (Posted: $date) via $source[color] (MSG ID: $id)"
 					}
