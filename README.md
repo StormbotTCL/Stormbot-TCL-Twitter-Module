@@ -19,6 +19,14 @@ up your eggdrop bot to work with [Twitter] (http://twitter.com "Twitter")
 
 Changelog - Dates are in Epoch time
 -----------------------------------
+1409454028
+
+*	Fixed an error in the friend timeline request command where if you had your name set to be highlighted it threw an error of 'invalid command name "encode"'. Should have been 'encoding'.
+
+1408057248
+
+*	Fixed error where the TLS TCL package was not being loaded. Missed this due to having something else loading the TLS TCL package until now.
+
 1398871633
 
 *	Due to being returned with error code 403 (Forbidden) and doing some digging, found out the 

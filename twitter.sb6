@@ -214,8 +214,9 @@ namespace eval twitter {
 	variable block_add_url "https://api.twitter.com/1.1/blocks/create.json" ; # POST create.json?screen_name=noradio
 	variable block_del_url "https://api.twitter.com/1.1/blocks/destroy.json" ; # POST destroy.json?screen_name=noradio
 
+	# Trends
 	variable trends_url "https://api.twitter.com/1.1/trends/available.json" ; # GET
-	variable trends_woeid_url "https://api.twitter.com/1.1/trends/" ; # GET
+	variable trends_woeid_url "https://api.twitter.com/1.1/trends/place.json" ; # GET
 
 	variable search_usr_url "https://api.twitter.com/1.1/users/search.json" ; # GET search.json?q=noradio
 	variable rate_limit_url "https://api.twitter.com/1.1/application/rate_limit_status.json" ; # GET
@@ -1087,15 +1088,15 @@ proc SB:proc_twitter {nick host handle chan arg} {
 
 				if {[getdata $handle TWNAME] == $uname} {
 					if {[getdata $handle TWITTERDISP]} {
-						print $nick "[color 13]\002$uname ($name)\002: $text (Posted: $date) via $source[color] (MSG ID: $id)"
+						print $nick "[color 13]\002$uname ($name)\002: [encoding convertfrom utf-8 $text] (Posted: $date) via $source[color] (MSG ID: $id)"
 					} else {
-						print $nick "[color 13]\002$uname\002: $text (Posted: $date) via $source[color] (MSG ID: $id)"
+						print $nick "[color 13]\002$uname\002: [encoding convertfrom utf-8 $text] (Posted: $date) via $source[color] (MSG ID: $id)"
 					}
 				} else {
 					if {[getdata $handle TWITTERDISP]} {
-						print $nick "\002$uname ($name)\002: $text (Posted: $date) via $source (MSG ID: $id)"
+						print $nick "\002$uname ($name)\002: [encoding convertfrom utf-8 $text] (Posted: $date) via $source (MSG ID: $id)"
 					} else {
-						print $nick "\002$uname\002: $text (Posted: $date) via $source (MSG ID: $id)"
+						print $nick "\002$uname\002: [encoding convertfrom utf-8 $text] (Posted: $date) via $source (MSG ID: $id)"
 					}
 				}
 
@@ -1240,12 +1241,12 @@ proc SB:proc_twitter {nick host handle chan arg} {
 					# Use twitter:senddata process
 					if {[isempty 2]} {
 						set l2 1
-						if {[catch {twitter:senddata $handle $nick "${twitter::trends_woeid_url}${l2}.json"} result]} {
+						if {[catch {twitter:senddata $handle $nick $twitter::trends_woeid_url [list id $l2] GET} result]} {
 							print $nick "Trends fetch failed."
 							return 0
 						}
 					} else {
-						if {[catch {twitter:senddata $handle $nick "${twitter::trends_woeid_url}${2}.json"} result]} {
+						if {[catch {twitter:senddata $handle $nick $twitter::trends_woeid_url [list id $l2] GET} result]} {
 							print $nick "Trends fetch failed."
 							return 0
 						}
@@ -1810,7 +1811,7 @@ proc twitter:shorten {url type} {
 proc twitter:check_packages args {
 	# Make sure the require packages are installed
 	empty ok bad
-	foreach a [list base64 json http sha1] {
+	foreach a [list base64 json http sha1 tls] {
 		set error [ catch { package require $a } ]
 		if $error { lappend bad $a } { lappend ok $a }
 	}
