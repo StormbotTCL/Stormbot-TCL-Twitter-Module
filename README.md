@@ -19,6 +19,10 @@ up your eggdrop bot to work with [Twitter] (http://twitter.com "Twitter")
 
 Changelog - Dates are in Epoch time
 -----------------------------------
+1413603340
+
+*	Patched the TLS call to use -tls1 1 due to the Poodle vulnerability disclosed by Google. Information can be found [here] (https://www.openssl.org/~bodo/ssl-poodle.pdf)
+
 1409454028
 
 *	Fixed an error in the friend timeline request command where if you had your name set to be highlighted it threw an error of 'invalid command name "encode"'. Should have been 'encoding'.
