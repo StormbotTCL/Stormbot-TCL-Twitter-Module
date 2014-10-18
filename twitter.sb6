@@ -96,7 +96,7 @@ proc oauth:query_call {url method params {sign_params {}} {token_secret {}}} {
 proc oauth:query {url method oauth_header {query {}}} {
 	set header [list Authorization [concat "OAuth" $oauth_header]]
 	::http::config -useragent "Mozilla/5.0 (Linux; U; Eggdrop) Stormbot TCL"
-	::http::register https 443 [list ::tls::socket -require 0 -request 1]
+	::http::register https 443 [list ::tls::socket -require 0 -request 1 -tls1 1]
 
 	if {[string eq "GET" $method]} {
 		set token [http::geturl $url -headers $header -method $method -timeout $oauth::timeout]
